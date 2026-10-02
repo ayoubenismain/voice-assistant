@@ -1,0 +1,1 @@
+import { PrismaClient } from '@prisma/client'; const prisma = new PrismaClient(); async function main() { await prisma.$queryRawUnsafe('CREATE EXTENSION IF NOT EXISTS vector;'); const res = await prisma.$queryRawUnsafe('SELECT extname, extversion FROM pg_extension WHERE extname = \'vector\';'); console.log(res); } main().finally(() => prisma.$disconnect());
