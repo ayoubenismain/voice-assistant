@@ -7,20 +7,27 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
-import { Injectable } from '@nestjs/common';
-import { OllamaLlmProvider } from './providers/ollama-llm.provider.js';
-let LlmService = class LlmService {
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
+var LlmService_1;
+import { Injectable, Inject, Logger } from '@nestjs/common';
+export const LLM_PROVIDER_TOKEN = 'LLM_PROVIDER';
+let LlmService = LlmService_1 = class LlmService {
     llmProvider;
+    logger = new Logger(LlmService_1.name);
     constructor(llmProvider) {
         this.llmProvider = llmProvider;
     }
     async generateStructuredResponse(messages, options) {
+        this.logger.debug(`Delegating to LLM provider`);
         return this.llmProvider.generateStructuredResponse(messages, options);
     }
 };
-LlmService = __decorate([
+LlmService = LlmService_1 = __decorate([
     Injectable(),
-    __metadata("design:paramtypes", [OllamaLlmProvider])
+    __param(0, Inject(LLM_PROVIDER_TOKEN)),
+    __metadata("design:paramtypes", [Object])
 ], LlmService);
 export { LlmService };
 //# sourceMappingURL=llm.service.js.map

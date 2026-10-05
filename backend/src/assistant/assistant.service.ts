@@ -7,6 +7,8 @@ import { LlmService } from '../llm/llm.service.js';
 import { RagContextBuilderService } from '../rag/rag-context-builder.service.js';
 import { RagPromptBuilderService } from '../rag/rag-prompt-builder.service.js';
 import { RagContextSource } from '../rag/rag.types.js';
+import { buildNoVerifiedInfoFallback, buildOutOfScopeMessage } from './language-fallback.helper.js';
+import { ScopeGuardService } from '../scope-guard/scope-guard.service.js';
 
 @Injectable()
 export class AssistantService {
@@ -19,6 +21,7 @@ export class AssistantService {
     private readonly llmService: LlmService,
     private readonly ragContextBuilder: RagContextBuilderService,
     private readonly ragPromptBuilder: RagPromptBuilderService,
+    private readonly scopeGuard: ScopeGuardService,
   ) {
     this.retrievalTopK = this.configService.get<number>('RAG_RETRIEVAL_TOP_K', 8);
   }
@@ -28,6 +31,43 @@ export class AssistantService {
     let retrievalMs = 0;
     let contextBuildMs = 0;
     let generationMs = 0;
+
+    // ── Phase 7: Scope Guard ─────────────────────────────────────────────────
+    // Runs BEFORE retrieval, embedding, and generation.
+    // Out-of-scope queries are rejected immediately — no BGE-M3, no pgvector,
+    // no Gemini RAG generation.
+    const scopeDecision = await this.scopeGuard.decide(dto.query);
+
+    if (scopeDecision.decision === 'out_of_scope') {
+      this.logger.log(
+        `[AssistantService] out_of_scope: reason=${scopeDecision.reason} method=${scopeDecision.method}`,
+      );
+      return {
+        type: 'out_of_scope',
+        query: dto.query,
+        answer: buildOutOfScopeMessage(dto.query),
+        sources: [],
+        timing: {
+          retrievalMs: 0,
+          contextBuildMs: 0,
+          generationMs: 0,
+          totalMs: Date.now() - startTime,
+        },
+        ...(dto.debug && {
+          debug: {
+            scopeDecision: scopeDecision.decision,
+            scopeMethod: scopeDecision.method,
+            scopeReasonCode: scopeDecision.reason,
+          },
+        }),
+      };
+    }
+
+    this.logger.debug(
+      `[AssistantService] in_scope: reason=${scopeDecision.reason} — proceeding to retrieval.`,
+    );
+
+    // ── Phase 6: existing retrieval + generation path (UNCHANGED) ────────────
 
     let resolvedQuery = dto.query.trim();
     if (dto.clarificationContext) {
@@ -60,7 +100,7 @@ export class AssistantService {
       return {
         type: 'no_verified_info',
         query: dto.query,
-        answer: 'Je n\'ai pas trouvé d\'information vérifiée à ce sujet dans les sources ISSATSO disponibles.',
+        answer: buildNoVerifiedInfoFallback(dto.query),
         sources: [],
         timing: { retrievalMs, contextBuildMs, generationMs: 0, totalMs: Date.now() - startTime },
         ...(dto.debug && { debug: { reason: 'no_retrieval_results' } })
@@ -99,7 +139,7 @@ export class AssistantService {
     if (finalType === 'answer' && validSources.length === 0) {
       // Model gave an answer but used no verified sources, reject the answer
       finalType = 'no_verified_info';
-      answer = 'Je n\'ai pas trouvé d\'information vérifiée à ce sujet dans les sources ISSATSO disponibles.';
+      answer = buildNoVerifiedInfoFallback(dto.query);
     }
 
     const response: AssistantResponse = {
@@ -117,7 +157,8 @@ export class AssistantService {
     if (finalType === 'answer') {
       response.answer = answer || undefined;
     } else if (finalType === 'no_verified_info') {
-      response.answer = answer || 'Je n\'ai pas trouvé d\'information vérifiée à ce sujet dans les sources ISSATSO disponibles.';
+      // Use the model's own answer if provided; fall back to a language-aware message if not.
+      response.answer = answer || buildNoVerifiedInfoFallback(dto.query);
     } else if (finalType === 'clarification') {
       response.clarification = {
         question: llmResponse.clarificationQuestion || 'Pouvez-vous préciser ?',
@@ -135,6 +176,9 @@ export class AssistantService {
         selectedContextSourceIds: Array.from(sourceMap.keys()),
         detectedIntents: retrievalResult.retrieval.detectedIntents,
         retrievalStrategy: retrievalResult.retrieval.strategy,
+        scopeDecision: scopeDecision.decision,
+        scopeMethod: scopeDecision.method,
+        scopeReasonCode: scopeDecision.reason,
       };
     }
 

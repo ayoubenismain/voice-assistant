@@ -14,20 +14,24 @@ import { RetrievalService } from '../retrieval/retrieval.service.js';
 import { LlmService } from '../llm/llm.service.js';
 import { RagContextBuilderService } from '../rag/rag-context-builder.service.js';
 import { RagPromptBuilderService } from '../rag/rag-prompt-builder.service.js';
+import { buildNoVerifiedInfoFallback, buildOutOfScopeMessage } from './language-fallback.helper.js';
+import { ScopeGuardService } from '../scope-guard/scope-guard.service.js';
 let AssistantService = AssistantService_1 = class AssistantService {
     configService;
     retrievalService;
     llmService;
     ragContextBuilder;
     ragPromptBuilder;
+    scopeGuard;
     logger = new Logger(AssistantService_1.name);
     retrievalTopK;
-    constructor(configService, retrievalService, llmService, ragContextBuilder, ragPromptBuilder) {
+    constructor(configService, retrievalService, llmService, ragContextBuilder, ragPromptBuilder, scopeGuard) {
         this.configService = configService;
         this.retrievalService = retrievalService;
         this.llmService = llmService;
         this.ragContextBuilder = ragContextBuilder;
         this.ragPromptBuilder = ragPromptBuilder;
+        this.scopeGuard = scopeGuard;
         this.retrievalTopK = this.configService.get('RAG_RETRIEVAL_TOP_K', 8);
     }
     async ask(dto) {
@@ -35,6 +39,30 @@ let AssistantService = AssistantService_1 = class AssistantService {
         let retrievalMs = 0;
         let contextBuildMs = 0;
         let generationMs = 0;
+        const scopeDecision = await this.scopeGuard.decide(dto.query);
+        if (scopeDecision.decision === 'out_of_scope') {
+            this.logger.log(`[AssistantService] out_of_scope: reason=${scopeDecision.reason} method=${scopeDecision.method}`);
+            return {
+                type: 'out_of_scope',
+                query: dto.query,
+                answer: buildOutOfScopeMessage(dto.query),
+                sources: [],
+                timing: {
+                    retrievalMs: 0,
+                    contextBuildMs: 0,
+                    generationMs: 0,
+                    totalMs: Date.now() - startTime,
+                },
+                ...(dto.debug && {
+                    debug: {
+                        scopeDecision: scopeDecision.decision,
+                        scopeMethod: scopeDecision.method,
+                        scopeReasonCode: scopeDecision.reason,
+                    },
+                }),
+            };
+        }
+        this.logger.debug(`[AssistantService] in_scope: reason=${scopeDecision.reason} — proceeding to retrieval.`);
         let resolvedQuery = dto.query.trim();
         if (dto.clarificationContext) {
             resolvedQuery = `Original question: ${dto.clarificationContext.originalQuery}\nClarification answer: ${resolvedQuery}`;
@@ -58,7 +86,7 @@ let AssistantService = AssistantService_1 = class AssistantService {
             return {
                 type: 'no_verified_info',
                 query: dto.query,
-                answer: 'Je n\'ai pas trouvé d\'information vérifiée à ce sujet dans les sources ISSATSO disponibles.',
+                answer: buildNoVerifiedInfoFallback(dto.query),
                 sources: [],
                 timing: { retrievalMs, contextBuildMs, generationMs: 0, totalMs: Date.now() - startTime },
                 ...(dto.debug && { debug: { reason: 'no_retrieval_results' } })
@@ -88,7 +116,7 @@ let AssistantService = AssistantService_1 = class AssistantService {
         let answer = llmResponse.answer;
         if (finalType === 'answer' && validSources.length === 0) {
             finalType = 'no_verified_info';
-            answer = 'Je n\'ai pas trouvé d\'information vérifiée à ce sujet dans les sources ISSATSO disponibles.';
+            answer = buildNoVerifiedInfoFallback(dto.query);
         }
         const response = {
             type: finalType,
@@ -105,7 +133,7 @@ let AssistantService = AssistantService_1 = class AssistantService {
             response.answer = answer || undefined;
         }
         else if (finalType === 'no_verified_info') {
-            response.answer = answer || 'Je n\'ai pas trouvé d\'information vérifiée à ce sujet dans les sources ISSATSO disponibles.';
+            response.answer = answer || buildNoVerifiedInfoFallback(dto.query);
         }
         else if (finalType === 'clarification') {
             response.clarification = {
@@ -123,6 +151,9 @@ let AssistantService = AssistantService_1 = class AssistantService {
                 selectedContextSourceIds: Array.from(sourceMap.keys()),
                 detectedIntents: retrievalResult.retrieval.detectedIntents,
                 retrievalStrategy: retrievalResult.retrieval.strategy,
+                scopeDecision: scopeDecision.decision,
+                scopeMethod: scopeDecision.method,
+                scopeReasonCode: scopeDecision.reason,
             };
         }
         return response;
@@ -134,7 +165,8 @@ AssistantService = AssistantService_1 = __decorate([
         RetrievalService,
         LlmService,
         RagContextBuilderService,
-        RagPromptBuilderService])
+        RagPromptBuilderService,
+        ScopeGuardService])
 ], AssistantService);
 export { AssistantService };
 //# sourceMappingURL=assistant.service.js.map

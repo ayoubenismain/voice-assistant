@@ -6,7 +6,7 @@ export interface AssistantTiming {
     totalMs: number;
 }
 export interface AssistantResponse {
-    type: 'answer' | 'clarification' | 'no_verified_info';
+    type: 'answer' | 'clarification' | 'no_verified_info' | 'out_of_scope';
     query: string;
     answer?: string;
     clarification?: {

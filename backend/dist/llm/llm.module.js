@@ -5,15 +5,39 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
 import { Module } from '@nestjs/common';
-import { LlmService } from './llm.service.js';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { LlmService, LLM_PROVIDER_TOKEN } from './llm.service.js';
 import { OllamaLlmProvider } from './providers/ollama-llm.provider.js';
-import { ConfigModule } from '@nestjs/config';
+import { GeminiLlmProvider } from './providers/gemini-llm.provider.js';
 let LlmModule = class LlmModule {
 };
 LlmModule = __decorate([
     Module({
         imports: [ConfigModule],
-        providers: [LlmService, OllamaLlmProvider],
+        providers: [
+            OllamaLlmProvider,
+            GeminiLlmProvider,
+            {
+                provide: LLM_PROVIDER_TOKEN,
+                useFactory: (configService, ollamaProvider, geminiProvider) => {
+                    const raw = configService.get('LLM_PROVIDER', '');
+                    const llmProvider = raw.toLowerCase().trim();
+                    if (llmProvider === 'ollama') {
+                        return ollamaProvider;
+                    }
+                    if (llmProvider === 'gemini') {
+                        return geminiProvider;
+                    }
+                    throw new Error(`Unsupported LLM_PROVIDER: "${raw}". Expected "ollama" or "gemini".`);
+                },
+                inject: [ConfigService, OllamaLlmProvider, GeminiLlmProvider],
+            },
+            {
+                provide: LlmService,
+                useFactory: (provider) => new LlmService(provider),
+                inject: [LLM_PROVIDER_TOKEN],
+            },
+        ],
         exports: [LlmService],
     })
 ], LlmModule);
