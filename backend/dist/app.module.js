@@ -17,6 +17,7 @@ import { LlmModule } from './llm/llm.module.js';
 import { RagModule } from './rag/rag.module.js';
 import { AssistantModule } from './assistant/assistant.module.js';
 import { SttModule } from './stt/stt.module.js';
+import { TtsModule } from './tts/tts.module.js';
 import { VoiceModule } from './voice/voice.module.js';
 let AppModule = class AppModule {
 };
@@ -35,6 +36,7 @@ AppModule = __decorate([
             RagModule,
             AssistantModule,
             SttModule,
+            TtsModule,
             VoiceModule,
         ],
         controllers: [AppController],

@@ -8,7 +8,9 @@ import {
   HttpStatus,
   Logger,
   Query,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { ConfigService } from '@nestjs/config';
@@ -177,5 +179,54 @@ export class VoiceController {
       fileName: file.originalname,
       debug: debug === 'true',
     });
+  }
+
+  /**
+   * POST /api/voice/respond
+   *
+   * Accepts one audio file via multipart/form-data (field name: "file").
+   * Processes transcription, passes it to AssistantService, and returns a spoken WAV response.
+   */
+  @Post('respond')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: {
+        fileSize: undefined,
+      },
+    }),
+  )
+  async respond(
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!file) {
+      throw new BadRequestException('Audio file is required.');
+    }
+
+    if (file.size > this.maxAudioBytes) {
+      throw new BadRequestException(
+        `Audio file too large. Maximum allowed size is ${this.maxAudioBytes} bytes.`,
+      );
+    }
+
+    this.logger.log(
+      `[Voice] respond request mime=${file.mimetype} bytes=${file.size}`,
+    );
+
+    const result = await this.voiceService.respond({
+      audio: file.buffer,
+      mimeType: file.mimetype,
+      fileName: file.originalname,
+    });
+
+    res.set({
+      'Content-Type': result.mimeType,
+      'Content-Length': result.audio.length,
+      'Content-Disposition': 'inline; filename="response.wav"',
+    });
+
+    res.send(result.audio);
   }
 }

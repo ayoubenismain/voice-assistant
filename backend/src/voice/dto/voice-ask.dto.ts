@@ -11,3 +11,21 @@ export interface VoiceAskResponseDto {
   assistant: AssistantResponse;
   timing: VoiceTiming;
 }
+
+export interface VoiceRespondResult {
+  audio: Buffer;
+  mimeType: 'audio/wav';
+  transcript: string;
+  assistant: AssistantResponse;
+  timing: {
+    sttMs: number;
+    assistantMs: number;
+    ttsMs: number;
+    totalMs: number;
+  };
+  tts: {
+    provider: string;
+    model: string;
+    voice: string;
+  };
+}

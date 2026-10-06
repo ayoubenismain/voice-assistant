@@ -36,7 +36,25 @@ const MOCK_VOICE_ASK_RESULT = {
     sttMs: 512,
     assistantMs: 115,
     totalMs: 627,
-  }
+  },
+};
+
+const MOCK_VOICE_RESPOND_RESULT = {
+  audio: Buffer.from('RIFF....WAVE'),
+  mimeType: 'audio/wav',
+  transcript: '9adech n5alles lel licence?',
+  assistant: MOCK_VOICE_ASK_RESULT.assistant,
+  timing: {
+    sttMs: 512,
+    assistantMs: 115,
+    ttsMs: 300,
+    totalMs: 927,
+  },
+  tts: {
+    provider: 'gemini',
+    model: 'gemini-3.8-flash-lite-tts',
+    voice: 'Kore',
+  },
 };
 
 /** Builds a fake Express.Multer.File for testing. */
@@ -68,7 +86,8 @@ async function buildController(
   const mockStt = { transcribe: mockTranscribe };
 
   const mockAsk = voiceOverrides.ask ?? vi.fn().mockResolvedValue(MOCK_VOICE_ASK_RESULT);
-  const mockVoiceService = { ask: mockAsk };
+  const mockRespond = vi.fn().mockResolvedValue(MOCK_VOICE_RESPOND_RESULT);
+  const mockVoiceService = { ask: mockAsk, respond: mockRespond, ...voiceOverrides };
 
   const mockProvider: SttProvider = {
     transcribe: vi.fn().mockResolvedValue(MOCK_STT_RESULT),
@@ -428,5 +447,70 @@ describe('VoiceController', () => {
     const file = makeMulFile({ size: 200, buffer: Buffer.alloc(200) });
 
     await expect(controller.ask(file)).rejects.toThrow(BadRequestException);
+  });
+
+  // ── Respond endpoint tests ────────────────────────────────────────────────
+
+  describe('respond endpoint', () => {
+    it('28. POST /voice/respond exists and is defined', async () => {
+      const { controller } = await buildController();
+      expect(controller.respond).toBeDefined();
+    });
+
+    it('29. missing file → 400 (BadRequestException)', async () => {
+      const { controller } = await buildController();
+      // Need a mock Res
+      const res = { set: vi.fn(), send: vi.fn() } as any;
+      await expect(
+        controller.respond(undefined as unknown as Express.Multer.File, res),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('30. valid file delegates to VoiceService.respond', async () => {
+      const { controller, mockVoiceService } = await buildController();
+      const file = makeMulFile();
+      const res = { set: vi.fn(), send: vi.fn() } as any;
+
+      await controller.respond(file, res);
+
+      expect(mockVoiceService.respond).toHaveBeenCalledTimes(1);
+      expect(mockVoiceService.respond).toHaveBeenCalledWith({
+        audio: file.buffer,
+        mimeType: 'audio/wav',
+        fileName: 'question.wav',
+      });
+    });
+
+    it('31. max upload size still enforced for respond endpoint', async () => {
+      const { controller } = await buildController({}, { VOICE_MAX_AUDIO_BYTES: 100 });
+      const file = makeMulFile({ size: 200, buffer: Buffer.alloc(200) });
+      const res = { set: vi.fn(), send: vi.fn() } as any;
+
+      await expect(controller.respond(file, res)).rejects.toThrow(BadRequestException);
+    });
+
+    it('32. successful response calls res.set with correct headers', async () => {
+      const { controller } = await buildController();
+      const file = makeMulFile();
+      const res = { set: vi.fn(), send: vi.fn() } as any;
+
+      await controller.respond(file, res);
+
+      expect(res.set).toHaveBeenCalledWith({
+        'Content-Type': 'audio/wav',
+        'Content-Length': MOCK_VOICE_RESPOND_RESULT.audio.length,
+        'Content-Disposition': 'inline; filename="response.wav"',
+      });
+    });
+
+    it('33. successful response calls res.send with raw audio bytes (not JSON or base64)', async () => {
+      const { controller } = await buildController();
+      const file = makeMulFile();
+      const res = { set: vi.fn(), send: vi.fn() } as any;
+
+      await controller.respond(file, res);
+
+      expect(res.send).toHaveBeenCalledWith(MOCK_VOICE_RESPOND_RESULT.audio);
+    });
   });
 });
