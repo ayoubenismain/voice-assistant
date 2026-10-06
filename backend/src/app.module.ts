@@ -7,10 +7,11 @@ import { PrismaModule } from './prisma/prisma.module.js';
 import { DocumentsModule } from './documents/documents.module.js';
 import { EmbeddingsModule } from './embeddings/embeddings.module.js';
 import { RetrievalModule } from './retrieval/retrieval.module.js';
-
 import { LlmModule } from './llm/llm.module.js';
 import { RagModule } from './rag/rag.module.js';
 import { AssistantModule } from './assistant/assistant.module.js';
+import { SttModule } from './stt/stt.module.js';
+import { VoiceModule } from './voice/voice.module.js';
 
 @Module({
   imports: [
@@ -25,6 +26,8 @@ import { AssistantModule } from './assistant/assistant.module.js';
     LlmModule,
     RagModule,
     AssistantModule,
+    SttModule,
+    VoiceModule,
   ],
   controllers: [AppController],
   providers: [AppService],
