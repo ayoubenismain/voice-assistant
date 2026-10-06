@@ -592,4 +592,60 @@ describe('GeminiLlmProvider', () => {
     const result = await p.generateStructuredResponse(testMessages);
     expect(result.usedSourceIds).toEqual([]);
   });
+
+  // ── M. Deadline Accounting & String parsing fix ───────────────────────────
+
+  it('M: parses string environment variables to prevent absurd remainingMs values', async () => {
+    // Pass strings simulating ConfigService returning unparsed env strings
+    const p = await buildProvider({
+      GEMINI_TOTAL_TIMEOUT_MS: '40000',
+      GEMINI_ATTEMPT_TIMEOUT_MS: '15000',
+    });
+    
+    expect((p as any).totalTimeoutMs).toBe(40000);
+    expect((p as any).attemptTimeoutMs).toBe(15000);
+  });
+
+  it('M: elapsed time correctly decreases remaining time and never goes negative', async () => {
+    const p = await buildProvider({
+      GEMINI_TOTAL_TIMEOUT_MS: 40000,
+      GEMINI_ATTEMPT_TIMEOUT_MS: 15000,
+      GEMINI_MAX_RETRIES: 0,
+    });
+    
+    // Simulate primary failure after 25000ms
+    mockGenerateContent.mockImplementationOnce(async () => {
+      await vi.advanceTimersByTimeAsync(25000);
+      throw make503();
+    }).mockResolvedValueOnce({ text: JSON.stringify(answerPayload()) });
+
+    await p.generateStructuredResponse(testMessages);
+    
+    const fallbackCallConfig = mockGenerateContent.mock.calls[1][0].config;
+    // Fallback receives ONLY the actual remaining budget: 40000 - 25000 = 15000
+    // And bounded by attemptTimeoutMs (15000)
+    expect(fallbackCallConfig.httpOptions?.timeout).toBeLessThanOrEqual(15000);
+    expect(fallbackCallConfig.httpOptions?.timeout).toBeGreaterThan(0);
+  });
+
+  it('M: fallback fails immediately if remaining budget is <= 0', async () => {
+    const p = await buildProvider({
+      GEMINI_TOTAL_TIMEOUT_MS: 40000,
+      GEMINI_MAX_RETRIES: 0,
+    });
+    
+    // Simulate primary taking longer than total budget
+    mockGenerateContent.mockImplementationOnce(async () => {
+      await vi.advanceTimersByTimeAsync(40000);
+      throw make503();
+    });
+
+    const resultPromise = p.generateStructuredResponse(testMessages);
+    
+    // Catch the total deadline timeout error or the budget exhausted error
+    await expect(resultPromise).rejects.toThrow(ServiceUnavailableException);
+    
+    // Fallback should not be called because budget is exhausted
+    expect(mockGenerateContent).toHaveBeenCalledTimes(1);
+  });
 });

@@ -86,6 +86,14 @@ function classifyTtsError(error: unknown): ClassifiedTtsError {
   return { type: 'unknown', safeMessage };
 }
 
+function getSafeErrorMetadata(error: unknown) {
+  const raw = error as any;
+  const status = typeof raw?.status === 'number' || typeof raw?.status === 'string' ? raw.status : undefined;
+  const code = typeof raw?.code === 'number' || typeof raw?.code === 'string' ? raw.code : undefined;
+  const name = typeof raw?.name === 'string' ? raw.name : undefined;
+  return { status, code, name };
+}
+
 // ---------------------------------------------------------------------------
 // Provider
 // ---------------------------------------------------------------------------
@@ -141,7 +149,7 @@ export class GeminiTtsProvider implements TtsProvider {
     );
     this.defaultVoice = this.configService.get<string>('TTS_VOICE', 'Kore');
     this.defaultStyle = this.configService.get<string>('TTS_STYLE') || undefined;
-    this.timeoutMs = this.configService.get<number>('TTS_TIMEOUT_MS', 15000);
+    this.timeoutMs = Number(this.configService.get<number>('TTS_TIMEOUT_MS', 15000));
 
     this.client = new GoogleGenAI({ apiKey });
   }
@@ -256,8 +264,9 @@ export class GeminiTtsProvider implements TtsProvider {
       });
     } catch (error: unknown) {
       const classified = classifyTtsError(error);
+      const meta = getSafeErrorMetadata(error);
       this.logger.error(
-        `[TTS] synthesis error elapsedMs=${elapsed()} type=${classified.type}`,
+        `[TTS] synthesis error elapsedMs=${elapsed()} type=${classified.type} status=${meta.status} code=${meta.code} msg="${classified.safeMessage}"`
       );
 
       switch (classified.type) {

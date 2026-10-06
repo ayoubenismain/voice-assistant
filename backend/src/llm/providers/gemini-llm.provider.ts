@@ -105,6 +105,14 @@ function classifyError(error: unknown): ClassifiedError {
   };
 }
 
+function getSafeErrorMetadata(error: unknown) {
+  const raw = error as any;
+  const status = typeof raw?.status === 'number' || typeof raw?.status === 'string' ? raw.status : undefined;
+  const code = typeof raw?.code === 'number' || typeof raw?.code === 'string' ? raw.code : undefined;
+  const name = typeof raw?.name === 'string' ? raw.name : undefined;
+  return { status, code, name };
+}
+
 /**
  * Exponential backoff with ±25 % jitter.
  * Base 750 ms: fast enough for interactive use while still spreading load.
@@ -143,10 +151,10 @@ export class GeminiLlmProvider implements LlmProvider {
     const apiKey = this.configService.get<string>('GEMINI_API_KEY', '');
     this.defaultModel     = this.configService.get<string>('GEMINI_MODEL', 'gemini-3.5-flash');
     this.fallbackModel    = this.configService.get<string>('GEMINI_FALLBACK_MODEL', 'gemini-3.5-flash-lite');
-    this.maxRetries       = this.configService.get<number>('GEMINI_MAX_RETRIES', 0);
-    this.attemptTimeoutMs = this.configService.get<number>('GEMINI_ATTEMPT_TIMEOUT_MS', 15000);
-    this.totalTimeoutMs   = this.configService.get<number>('GEMINI_TOTAL_TIMEOUT_MS', 40000);
-    this.defaultTemperature = this.configService.get<number>('LLM_TEMPERATURE', 0);
+    this.maxRetries       = Number(this.configService.get<number>('GEMINI_MAX_RETRIES', 0));
+    this.attemptTimeoutMs = Number(this.configService.get<number>('GEMINI_ATTEMPT_TIMEOUT_MS', 15000));
+    this.totalTimeoutMs   = Number(this.configService.get<number>('GEMINI_TOTAL_TIMEOUT_MS', 40000));
+    this.defaultTemperature = Number(this.configService.get<number>('LLM_TEMPERATURE', 0));
 
     this.client = new GoogleGenAI({ apiKey });
   }
@@ -338,10 +346,13 @@ export class GeminiLlmProvider implements LlmProvider {
         clearTimeout(attemptTimeoutHandle);
         setActiveController(null);
         const classified = classifyError(error);
+        const meta = getSafeErrorMetadata(error);
 
         // Hard auth/config errors — never retry, never fall back
         if (classified.isAuthError) {
-          this.logger.error(`[Gemini] auth/config error: ${classified.safeMessage}`);
+          this.logger.error(
+            `[Gemini] auth/config error elapsedMs=${elapsed()} status=${meta.status} code=${meta.code} msg="${classified.safeMessage}"`
+          );
           const lower = classified.safeMessage.toLowerCase();
           if (
             lower.includes('api_key') ||
@@ -356,13 +367,15 @@ export class GeminiLlmProvider implements LlmProvider {
 
         // Non-transient, non-auth (empty/malformed response) — fail immediately
         if (!classified.isTransient) {
-          this.logger.error(`[Gemini] non-retryable error: ${classified.safeMessage}`);
+          this.logger.error(
+            `[Gemini] non-retryable error elapsedMs=${elapsed()} status=${meta.status} code=${meta.code} msg="${classified.safeMessage}"`
+          );
           throw new ServiceUnavailableException(`LLM Provider Error: ${classified.safeMessage}`);
         }
 
         lastTransientError = error;
         this.logger.warn(
-          `[Gemini] transient error on attempt ${attempt}: ${classified.safeMessage}`,
+          `[Gemini] transient error on attempt ${attempt} elapsedMs=${elapsed()} status=${meta.status} code=${meta.code} msg="${classified.safeMessage}"`
         );
       }
     }
@@ -413,8 +426,9 @@ export class GeminiLlmProvider implements LlmProvider {
       clearTimeout(fallbackTimeoutHandle);
       setActiveController(null);
       const classified = classifyError(fallbackError);
+      const meta = getSafeErrorMetadata(fallbackError);
       this.logger.error(
-        `[Gemini] fallback also failed after ${elapsed()}ms: ${classified.safeMessage}`,
+        `[Gemini] fallback also failed elapsedMs=${elapsed()} status=${meta.status} code=${meta.code} msg="${classified.safeMessage}"`
       );
       const originalMessage = classifyError(lastTransientError).safeMessage;
       throw new ServiceUnavailableException(`LLM Provider Error: ${originalMessage}`);

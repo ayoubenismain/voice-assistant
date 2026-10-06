@@ -6,6 +6,7 @@ export declare class OllamaEmbeddingProvider implements EmbeddingProvider {
     private readonly baseUrl;
     private readonly model;
     private readonly dimensions;
+    private readonly keepAlive?;
     private readonly timeoutMs;
     constructor(configService: ConfigService);
     getProviderName(): string;

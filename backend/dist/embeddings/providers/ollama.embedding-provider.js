@@ -16,6 +16,7 @@ let OllamaEmbeddingProvider = OllamaEmbeddingProvider_1 = class OllamaEmbeddingP
     baseUrl;
     model;
     dimensions;
+    keepAlive;
     timeoutMs = 600_000;
     constructor(configService) {
         this.configService = configService;
@@ -26,6 +27,7 @@ let OllamaEmbeddingProvider = OllamaEmbeddingProvider_1 = class OllamaEmbeddingP
             this.configService.get('EMBEDDING_MODEL') ?? 'bge-m3';
         this.dimensions =
             parseInt(String(this.configService.get('EMBEDDING_DIMENSIONS') ?? 1024), 10);
+        this.keepAlive = this.configService.get('EMBEDDING_KEEP_ALIVE');
     }
     getProviderName() {
         return 'ollama';
@@ -44,7 +46,11 @@ let OllamaEmbeddingProvider = OllamaEmbeddingProvider_1 = class OllamaEmbeddingP
         if (texts.length === 0)
             return [];
         const url = `${this.baseUrl}/api/embed`;
-        const body = JSON.stringify({ model: this.model, input: texts });
+        const payload = { model: this.model, input: texts };
+        if (this.keepAlive) {
+            payload.keep_alive = this.keepAlive;
+        }
+        const body = JSON.stringify(payload);
         const startMs = Date.now();
         this.logger.log(`Embedding ${texts.length} text(s) via Ollama (${this.model}) at ${url}`);
         let response;

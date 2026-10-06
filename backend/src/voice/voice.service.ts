@@ -77,8 +77,13 @@ export class VoiceService {
     const ttsStart = Date.now();
     const ttsResult = await this.ttsService.synthesize({ text: spokenText });
     const ttsMs = Date.now() - ttsStart;
+    const totalMs = Date.now() - totalStart;
 
-    this.logger.log(`[VoiceService] full response completed totalMs=${Date.now() - totalStart}`);
+    this.logger.log(`[VOICE PERF] sttMs=${askResult.timing.sttMs} assistantMs=${askResult.timing.assistantMs} ttsMs=${ttsMs} totalMs=${totalMs}`);
+    if (askResult.assistant.timing) {
+      const ast = askResult.assistant.timing;
+      this.logger.log(`[ASSISTANT PERF] retrievalMs=${ast.retrievalMs} contextMs=${ast.contextBuildMs} generationMs=${ast.generationMs} totalMs=${askResult.timing.assistantMs}`);
+    }
 
     return {
       audio: ttsResult.audio,

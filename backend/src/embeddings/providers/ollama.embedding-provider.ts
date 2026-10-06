@@ -24,6 +24,7 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
   private readonly baseUrl: string;
   private readonly model: string;
   private readonly dimensions: number;
+  private readonly keepAlive?: string;
 
   /**
    * Request timeout in milliseconds.
@@ -43,6 +44,8 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
     // ConfigService returns env values as strings; parseInt ensures numeric comparison works.
     this.dimensions =
       parseInt(String(this.configService.get<number>('EMBEDDING_DIMENSIONS') ?? 1024), 10);
+
+    this.keepAlive = this.configService.get<string>('EMBEDDING_KEEP_ALIVE');
   }
 
   // ── EmbeddingProvider interface ─────────────────────────────────────────────
@@ -79,7 +82,11 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
     if (texts.length === 0) return [];
 
     const url = `${this.baseUrl}/api/embed`;
-    const body = JSON.stringify({ model: this.model, input: texts });
+    const payload: any = { model: this.model, input: texts };
+    if (this.keepAlive) {
+      payload.keep_alive = this.keepAlive;
+    }
+    const body = JSON.stringify(payload);
 
     const startMs = Date.now();
     this.logger.log(

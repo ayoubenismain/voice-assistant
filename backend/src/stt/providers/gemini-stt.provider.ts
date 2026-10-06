@@ -77,6 +77,14 @@ function classifySttError(error: unknown): ClassifiedSttError {
   return { type: 'unknown', safeMessage };
 }
 
+function getSafeErrorMetadata(error: unknown) {
+  const raw = error as any;
+  const status = typeof raw?.status === 'number' || typeof raw?.status === 'string' ? raw.status : undefined;
+  const code = typeof raw?.code === 'number' || typeof raw?.code === 'string' ? raw.code : undefined;
+  const name = typeof raw?.name === 'string' ? raw.name : undefined;
+  return { status, code, name };
+}
+
 // ---------------------------------------------------------------------------
 // Provider
 // ---------------------------------------------------------------------------
@@ -129,7 +137,7 @@ export class GeminiSttProvider implements SttProvider {
       'STT_MODEL',
       'gemini-3.5-transcribe',
     );
-    this.timeoutMs = this.configService.get<number>('STT_TIMEOUT_MS', 15000);
+    this.timeoutMs = Number(this.configService.get<number>('STT_TIMEOUT_MS', 15000));
 
     // Parse comma-separated custom vocabulary from env.
     // Trims each term; ignores empty entries.
@@ -259,8 +267,9 @@ export class GeminiSttProvider implements SttProvider {
       );
     } catch (error: unknown) {
       const classified = classifySttError(error);
+      const meta = getSafeErrorMetadata(error);
       this.logger.error(
-        `[STT] transcription error elapsedMs=${elapsed()} type=${classified.type}`,
+        `[STT] transcription error elapsedMs=${elapsed()} type=${classified.type} status=${meta.status} code=${meta.code} msg="${classified.safeMessage}"`
       );
 
       switch (classified.type) {

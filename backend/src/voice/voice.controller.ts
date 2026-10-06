@@ -200,6 +200,7 @@ export class VoiceController {
   async respond(
     @UploadedFile() file: Express.Multer.File | undefined,
     @Res() res: Response,
+    @Query('debug') debug?: string,
   ): Promise<void> {
     if (!file) {
       throw new BadRequestException('Audio file is required.');
@@ -219,6 +220,7 @@ export class VoiceController {
       audio: file.buffer,
       mimeType: file.mimetype,
       fileName: file.originalname,
+      debug: debug === 'true',
     });
 
     res.set({
@@ -226,6 +228,23 @@ export class VoiceController {
       'Content-Length': result.audio.length,
       'Content-Disposition': 'inline; filename="response.wav"',
     });
+
+    if (debug === 'true') {
+      res.set({
+        'X-Voice-STT-Ms': result.timing.sttMs.toString(),
+        'X-Voice-Assistant-Ms': result.timing.assistantMs.toString(),
+        'X-Voice-TTS-Ms': result.timing.ttsMs.toString(),
+        'X-Voice-Total-Ms': result.timing.totalMs.toString(),
+      });
+      if (result.assistant.timing) {
+        res.set({
+          'X-Assistant-Retrieval-Ms': result.assistant.timing.retrievalMs.toString(),
+          'X-Assistant-Context-Ms': result.assistant.timing.contextBuildMs.toString(),
+          'X-Assistant-Generation-Ms': result.assistant.timing.generationMs.toString(),
+          'X-Assistant-Type': result.assistant.type,
+        });
+      }
+    }
 
     res.send(result.audio);
   }

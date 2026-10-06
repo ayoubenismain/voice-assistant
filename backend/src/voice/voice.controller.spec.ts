@@ -478,6 +478,7 @@ describe('VoiceController', () => {
         audio: file.buffer,
         mimeType: 'audio/wav',
         fileName: 'question.wav',
+        debug: false,
       });
     });
 

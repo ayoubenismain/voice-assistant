@@ -2,10 +2,10 @@ HTTP/1.1 200 OK
 X-Powered-By: Express
 Access-Control-Allow-Origin: *
 Content-Type: audio/wav
-Content-Length: 1232994
+Content-Length: 447714
 Content-Disposition: inline; filename="response.wav"
-ETag: W/"12d062-vock+WrCuZrG3u9bOfvHRWqZR0s"
-Date: Tue, 06 Oct 2026 11:28:37 GMT
+ETag: W/"6d4e2-ej/u+PKYgPJzIbD8oAiiCJQWujo"
+Date: Tue, 06 Oct 2026 14:20:40 GMT
 Connection: keep-alive
 Keep-Alive: timeout=5
 

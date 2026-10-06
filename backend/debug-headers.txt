@@ -1,0 +1,19 @@
+HTTP/1.1 200 OK
+X-Powered-By: Express
+Access-Control-Allow-Origin: *
+Content-Type: audio/wav
+Content-Length: 714594
+Content-Disposition: inline; filename="response.wav"
+X-Voice-STT-Ms: 3222
+X-Voice-Assistant-Ms: 7192
+X-Voice-TTS-Ms: 6159
+X-Voice-Total-Ms: 16573
+X-Assistant-Retrieval-Ms: 479
+X-Assistant-Context-Ms: 0
+X-Assistant-Generation-Ms: 6712
+X-Assistant-Type: answer
+ETag: W/"ae762-n7GSjRNvDKIwEUTjvc7WAU83ys0"
+Date: Tue, 06 Oct 2026 17:56:14 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
