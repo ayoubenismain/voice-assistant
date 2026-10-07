@@ -17,6 +17,22 @@ export class AskAssistantDto {
   @MaxLength(1000)
   query: string;
 
+  /**
+   * DEVELOPMENT / TRANSITIONAL only.
+   *
+   * Enables conversation-aware behavior for a specific user.
+   * In production this MUST be derived from the authenticated session
+   * (request.user.id) — never trust arbitrary client-supplied userId values
+   * in a deployed environment.
+   *
+   * When omitted, the request falls back to stateless (Phase 5.6/7) behavior
+   * to preserve full backward compatibility.
+   */
+  @IsString()
+  @IsOptional()
+  @MaxLength(256)
+  userId?: string;
+
   @IsOptional()
   @ValidateNested()
   @Type(() => ClarificationContextDto)

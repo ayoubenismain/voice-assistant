@@ -11,6 +11,14 @@ export interface VoiceAskInput {
   mimeType: string;
   fileName?: string;
   debug?: boolean;
+  /**
+   * DEVELOPMENT / TRANSITIONAL only.
+   *
+   * Enables conversation-aware behavior for the voice channel.
+   * Text and voice share the SAME conversation (same userId → same Conversation row).
+   * In production, derive from authenticated session — never trust client-supplied values.
+   */
+  userId?: string;
 }
 
 @Injectable()
@@ -26,7 +34,7 @@ export class VoiceService {
   async ask(input: VoiceAskInput): Promise<VoiceAskResponseDto> {
     const totalStart = Date.now();
 
-    this.logger.log(`[VoiceService] ask request started`);
+    this.logger.log(`[VoiceService] ask request started userId=${input.userId ? '…' + input.userId.slice(-6) : 'stateless'}`);
 
     // 1. Transcription (Phase 8A/8B)
     const sttStart = Date.now();
@@ -39,12 +47,13 @@ export class VoiceService {
 
     this.logger.log(`[VoiceService] STT completed in ${sttMs}ms, transcript length: ${sttResult.text.length}`);
 
-    // 2. Assistant processing (Phase 5.6/6/7)
-    // The transcript is passed exactly as query, without modification.
+    // 2. Assistant processing — reuses the SAME conversation-aware AssistantService.
+    // Text and voice share the same conversation for a given userId.
     const assistantStart = Date.now();
     const assistantResult = await this.assistantService.ask({
       query: sttResult.text,
       debug: input.debug,
+      userId: input.userId,
     });
     const assistantMs = Date.now() - assistantStart;
 
@@ -66,7 +75,7 @@ export class VoiceService {
     const totalStart = Date.now();
     this.logger.log(`[VoiceService] respond request started`);
 
-    // Reuse existing STT + Assistant flow
+    // Reuse existing STT + Assistant flow (including conversation awareness)
     const askResult = await this.ask(input);
 
     const spokenText = this.extractSpeakableText(askResult.assistant);

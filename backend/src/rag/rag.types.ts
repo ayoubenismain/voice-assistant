@@ -23,4 +23,8 @@ export interface RagPromptContext {
   clarificationQuestion?: string;
   clarificationAnswer?: string;
   ragContext: string;
+  /** Optional bounded conversation history for continuity context only.
+   *  NOT a factual authority — handled by the grounding rule in RagPromptBuilderService. */
+  conversationHistory?: Array<{ role: 'USER' | 'ASSISTANT'; content: string }>;
 }
+

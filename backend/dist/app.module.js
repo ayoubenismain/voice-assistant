@@ -19,6 +19,7 @@ import { AssistantModule } from './assistant/assistant.module.js';
 import { SttModule } from './stt/stt.module.js';
 import { TtsModule } from './tts/tts.module.js';
 import { VoiceModule } from './voice/voice.module.js';
+import { ConversationModule } from './conversation/conversation.module.js';
 let AppModule = class AppModule {
 };
 AppModule = __decorate([
@@ -34,6 +35,7 @@ AppModule = __decorate([
             RetrievalModule,
             LlmModule,
             RagModule,
+            ConversationModule,
             AssistantModule,
             SttModule,
             TtsModule,

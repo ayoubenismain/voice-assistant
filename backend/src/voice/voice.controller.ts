@@ -9,6 +9,7 @@ import {
   Logger,
   Query,
   Res,
+  Body,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -158,6 +159,7 @@ export class VoiceController {
   async ask(
     @UploadedFile() file: Express.Multer.File | undefined,
     @Query('debug') debug?: string,
+    @Body('userId') userId?: string,
   ): Promise<VoiceAskResponseDto> {
     if (!file) {
       throw new BadRequestException('Audio file is required.');
@@ -170,7 +172,7 @@ export class VoiceController {
     }
 
     this.logger.log(
-      `[Voice] ask request mime=${file.mimetype} bytes=${file.size}`,
+      `[Voice] ask request mime=${file.mimetype} bytes=${file.size} userId=${userId ? 'provided' : 'stateless'}`,
     );
 
     return this.voiceService.ask({
@@ -178,6 +180,7 @@ export class VoiceController {
       mimeType: file.mimetype,
       fileName: file.originalname,
       debug: debug === 'true',
+      userId: userId || undefined,
     });
   }
 
@@ -201,6 +204,7 @@ export class VoiceController {
     @UploadedFile() file: Express.Multer.File | undefined,
     @Res() res: Response,
     @Query('debug') debug?: string,
+    @Body('userId') userId?: string,
   ): Promise<void> {
     if (!file) {
       throw new BadRequestException('Audio file is required.');
@@ -213,7 +217,7 @@ export class VoiceController {
     }
 
     this.logger.log(
-      `[Voice] respond request mime=${file.mimetype} bytes=${file.size}`,
+      `[Voice] respond request mime=${file.mimetype} bytes=${file.size} userId=${userId ? 'provided' : 'stateless'}`,
     );
 
     const result = await this.voiceService.respond({
@@ -221,6 +225,7 @@ export class VoiceController {
       mimeType: file.mimetype,
       fileName: file.originalname,
       debug: debug === 'true',
+      userId: userId || undefined,
     });
 
     res.set({

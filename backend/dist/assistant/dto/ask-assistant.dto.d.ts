@@ -4,6 +4,7 @@ export declare class ClarificationContextDto {
 }
 export declare class AskAssistantDto {
     query: string;
+    userId?: string;
     clarificationContext?: ClarificationContextDto;
     debug?: boolean;
 }

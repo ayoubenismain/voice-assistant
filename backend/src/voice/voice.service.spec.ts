@@ -95,6 +95,7 @@ describe('VoiceService', () => {
     expect(assistantServiceMock.ask).toHaveBeenCalledWith({
       query: MOCK_STT_RESULT.text,
       debug: undefined,
+      userId: undefined,
     });
   });
 
@@ -283,7 +284,7 @@ describe('VoiceService', () => {
     it('29. passes transcript to AssistantService exactly once', async () => {
       await service.respond({ audio: Buffer.from('test'), mimeType: 'audio/wav' });
       expect(assistantServiceMock.ask).toHaveBeenCalledTimes(1);
-      expect(assistantServiceMock.ask).toHaveBeenCalledWith({ query: MOCK_STT_RESULT.text, debug: undefined });
+      expect(assistantServiceMock.ask).toHaveBeenCalledWith({ query: MOCK_STT_RESULT.text, debug: undefined, userId: undefined });
     });
 
     it('30. calls TtsService exactly once after successful assistant response', async () => {
@@ -407,6 +408,71 @@ describe('VoiceService', () => {
     it('45. does not call RetrievalService or ScopeGuardService directly', () => {
       // Demonstrated by lack of these imports/providers in the module.
       expect(true).toBe(true);
+    });
+  });
+
+  // ── Phase 8G: Voice + Conversation Integration ────────────────────────────
+
+  describe('Phase 8G — Voice conversation-aware flow', () => {
+    it('16a. userId forwarded to AssistantService.ask()', async () => {
+      await service.ask({
+        audio: Buffer.from('test'),
+        mimeType: 'audio/wav',
+        userId: 'student-a',
+      });
+
+      expect(assistantServiceMock.ask).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'student-a' }),
+      );
+    });
+
+    it('16b. without userId, stateless behavior is preserved', async () => {
+      await service.ask({
+        audio: Buffer.from('test'),
+        mimeType: 'audio/wav',
+      });
+
+      expect(assistantServiceMock.ask).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: undefined }),
+      );
+    });
+
+    it('16c. respond() forwards userId to AssistantService via ask()', async () => {
+      await service.respond({
+        audio: Buffer.from('test'),
+        mimeType: 'audio/wav',
+        userId: 'student-a',
+      });
+
+      expect(assistantServiceMock.ask).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'student-a' }),
+      );
+    });
+
+    it('16d. voice clarification: TTS receives clarification question', async () => {
+      const clarificationResult: AssistantResponse = {
+        type: 'clarification',
+        query: '9adeh soum inscription?',
+        clarification: {
+          question: 'chniya cycle mta3ek?',
+          options: ['Licence', 'Master'],
+          context: { originalQuery: '9adeh soum inscription?' },
+        },
+        sources: [],
+        timing: MOCK_ASSISTANT_RESULT.timing,
+      };
+      assistantServiceMock.ask.mockResolvedValueOnce(clarificationResult);
+
+      const result = await service.respond({
+        audio: Buffer.from('test'),
+        mimeType: 'audio/wav',
+        userId: 'student-a',
+      });
+
+      expect(ttsServiceMock.synthesize).toHaveBeenCalledWith(
+        expect.objectContaining({ text: 'chniya cycle mta3ek?' }),
+      );
+      expect(result.assistant.type).toBe('clarification');
     });
   });
 });

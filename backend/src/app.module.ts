@@ -13,6 +13,7 @@ import { AssistantModule } from './assistant/assistant.module.js';
 import { SttModule } from './stt/stt.module.js';
 import { TtsModule } from './tts/tts.module.js';
 import { VoiceModule } from './voice/voice.module.js';
+import { ConversationModule } from './conversation/conversation.module.js';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { VoiceModule } from './voice/voice.module.js';
     RetrievalModule,
     LlmModule,
     RagModule,
+    ConversationModule,
     AssistantModule,
     SttModule,
     TtsModule,
@@ -35,3 +37,4 @@ import { VoiceModule } from './voice/voice.module.js';
   providers: [AppService],
 })
 export class AppModule {}
+

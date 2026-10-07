@@ -19,4 +19,8 @@ export interface RagPromptContext {
     clarificationQuestion?: string;
     clarificationAnswer?: string;
     ragContext: string;
+    conversationHistory?: Array<{
+        role: 'USER' | 'ASSISTANT';
+        content: string;
+    }>;
 }

@@ -26,6 +26,7 @@ __decorate([
 ], ClarificationContextDto.prototype, "clarificationQuestion", void 0);
 export class AskAssistantDto {
     query;
+    userId;
     clarificationContext;
     debug;
 }
@@ -34,6 +35,12 @@ __decorate([
     MaxLength(1000),
     __metadata("design:type", String)
 ], AskAssistantDto.prototype, "query", void 0);
+__decorate([
+    IsString(),
+    IsOptional(),
+    MaxLength(256),
+    __metadata("design:type", String)
+], AskAssistantDto.prototype, "userId", void 0);
 __decorate([
     IsOptional(),
     ValidateNested(),
