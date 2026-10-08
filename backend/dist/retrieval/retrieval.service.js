@@ -50,6 +50,7 @@ let RetrievalService = RetrievalService_1 = class RetrievalService {
         const provider = this.embeddingService.getProviderName();
         const model = this.embeddingService.getModelName();
         const dimensions = this.embeddingService.getDimensions();
+        this.logger.debug(`[DEBUG] Retrieval using provider=${provider}, model=${model}`);
         const normalized = this.normalizer.normalize(query);
         const useNormalized = normalized.expansionApplied;
         const embedStartMs = Date.now();
@@ -99,6 +100,10 @@ let RetrievalService = RetrievalService_1 = class RetrievalService {
         ORDER BY c.embedding <=> ${originalVecStr}::vector
         LIMIT ${candidateK};
       `;
+            this.logger.debug(`[DEBUG] originalResults count: ${originalResults.length}`);
+            if (originalResults.length > 0) {
+                this.logger.debug(`[DEBUG] top similarity: ${originalResults[0].similarity}`);
+            }
             let normalizedResults = [];
             if (normalizedVecStr) {
                 normalizedResults = await this.prisma.$queryRaw `
@@ -141,6 +146,7 @@ let RetrievalService = RetrievalService_1 = class RetrievalService {
           ORDER BY similarity DESC
           LIMIT ${candidateK};
         `;
+                this.logger.debug(`[DEBUG] lexicalResults count: ${lexicalResults.length}`);
             }
             const candidateMap = new Map();
             const addCandidates = (results, rankType, scoreType) => {

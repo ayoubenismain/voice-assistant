@@ -9,11 +9,12 @@ import { LlmMessage } from '../types/llm.types.js';
 // ---------------------------------------------------------------------------
 
 const mockGenerateContent = vi.fn();
+const mockConstructorSpy = vi.fn();
 
 vi.mock('@google/genai', () => {
   class MockGoogleGenAI {
     models = { generateContent: mockGenerateContent };
-    constructor(_opts: unknown) {}
+    constructor(opts: unknown) { mockConstructorSpy(opts); }
   }
   return {
     GoogleGenAI: MockGoogleGenAI,
@@ -96,6 +97,22 @@ const makeAbort = () => {
   e.name = 'AbortError';
   return e;
 };
+const makeFetchFailed = () => new Error('fetch failed');
+const makeEconnreset = () => {
+  const e = new Error('read ECONNRESET');
+  (e as any).cause = { code: 'ECONNRESET', syscall: 'read' };
+  return e;
+};
+const makeEtimedout = () => {
+  const e = new Error('connect ETIMEDOUT');
+  (e as any).cause = { code: 'ETIMEDOUT' };
+  return e;
+};
+const makeUndErrSocket = () => {
+  const e = new Error('socket closed');
+  (e as any).cause = { code: 'UND_ERR_SOCKET' };
+  return e;
+};
 /** A promise that never resolves — simulates a truly hung SDK call.
  * The internal .catch(() => {}) prevents Vitest's unhandled-rejection detector
  * from firing when the outer total-deadline abandons these promises.
@@ -114,6 +131,7 @@ describe('GeminiLlmProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers({ shouldAdvanceTime: false });
+    mockConstructorSpy.mockClear();
   });
 
   afterEach(() => {
@@ -236,10 +254,10 @@ describe('GeminiLlmProvider', () => {
 
   // ── Default flow: primary → fallback (MAX_RETRIES=0) ─────────────────────
 
-  it('default flow: primary 503 → fallback succeeds immediately (no sleep, no retry)', async () => {
+  it('default flow: primary 429 → fallback succeeds immediately (no sleep, no retry)', async () => {
     const p = await buildProvider(); // GEMINI_MAX_RETRIES=0
     mockGenerateContent
-      .mockRejectedValueOnce(make503())  // primary fails
+      .mockRejectedValueOnce(make429())  // primary fails
       .mockResolvedValueOnce({ text: JSON.stringify(answerPayload({ answer: 'Fallback answer.' })) });
 
     const result = await p.generateStructuredResponse(testMessages);
@@ -282,8 +300,8 @@ describe('GeminiLlmProvider', () => {
   it('H: exhausted primary retries → falls back, fallback succeeds', async () => {
     const p = await buildProvider({ GEMINI_MAX_RETRIES: 1 });
     mockGenerateContent
-      .mockRejectedValueOnce(make503())    // attempt 1
-      .mockRejectedValueOnce(make503())    // attempt 2 (retry)
+      .mockRejectedValueOnce(make429())    // attempt 1
+      .mockRejectedValueOnce(make429())    // attempt 2 (retry)
       .mockResolvedValueOnce({ text: JSON.stringify(answerPayload({ answer: 'Fallback!' })) });
 
     const result = await p.generateStructuredResponse(testMessages);
@@ -296,13 +314,97 @@ describe('GeminiLlmProvider', () => {
   it('H: fallback also disables SDK internal retry', async () => {
     const p = await buildProvider({ GEMINI_MAX_RETRIES: 0 });
     mockGenerateContent
-      .mockRejectedValueOnce(make503())
+      .mockRejectedValueOnce(make429())
       .mockResolvedValueOnce({ text: JSON.stringify(answerPayload()) });
 
     await p.generateStructuredResponse(testMessages);
 
     const fallbackConfig = mockGenerateContent.mock.calls[1][0].config;
     expect(fallbackConfig.httpOptions?.retryOptions?.attempts).toBe(1);
+  });
+
+  // ── Transport Resilience (Phase 8H) ───────────────────────────────────────
+
+  it('TR: "fetch failed" → recreate client, retry once, success', async () => {
+    const p = await buildProvider({ GEMINI_MAX_RETRIES: 0 }); // 0 retries natively
+    mockConstructorSpy.mockClear(); // clear initial instantiation
+
+    mockGenerateContent
+      .mockRejectedValueOnce(makeFetchFailed()) // primary attempt 1 fails
+      .mockResolvedValueOnce({ text: JSON.stringify(answerPayload({ answer: 'Success after retry!' })) }); // primary attempt 2 succeeds
+
+    const result = await p.generateStructuredResponse(testMessages);
+
+    expect(result.answer).toBe('Success after retry!');
+    expect(mockGenerateContent).toHaveBeenCalledTimes(2);
+    // Both calls to primary model
+    expect(mockGenerateContent.mock.calls[0][0].model).toBe('gemini-3.5-flash');
+    expect(mockGenerateContent.mock.calls[1][0].model).toBe('gemini-3.5-flash');
+    expect((p as any).sleep).toHaveBeenCalledTimes(1);
+    expect((p as any).sleep).toHaveBeenCalledWith(400); // Backoff is 400ms deterministically
+    
+    // Client recreated
+    expect(mockConstructorSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('TR: ECONNRESET in cause → retry once', async () => {
+    const p = await buildProvider({ GEMINI_MAX_RETRIES: 0 });
+    mockConstructorSpy.mockClear();
+    mockGenerateContent
+      .mockRejectedValueOnce(makeEconnreset())
+      .mockResolvedValueOnce({ text: JSON.stringify(answerPayload()) });
+
+    await p.generateStructuredResponse(testMessages);
+    expect(mockGenerateContent).toHaveBeenCalledTimes(2);
+    expect(mockConstructorSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('TR: ETIMEDOUT in cause → retry once', async () => {
+    const p = await buildProvider({ GEMINI_MAX_RETRIES: 0 });
+    mockGenerateContent
+      .mockRejectedValueOnce(makeEtimedout())
+      .mockResolvedValueOnce({ text: JSON.stringify(answerPayload()) });
+    await p.generateStructuredResponse(testMessages);
+    expect(mockGenerateContent).toHaveBeenCalledTimes(2);
+  });
+
+  it('TR: UND_ERR_SOCKET in cause → retry once', async () => {
+    const p = await buildProvider({ GEMINI_MAX_RETRIES: 0 });
+    mockGenerateContent
+      .mockRejectedValueOnce(makeUndErrSocket())
+      .mockResolvedValueOnce({ text: JSON.stringify(answerPayload()) });
+    await p.generateStructuredResponse(testMessages);
+    expect(mockGenerateContent).toHaveBeenCalledTimes(2);
+  });
+
+  it('TR: 429 quota is transient but NOT transport → NO retry loop if MAX_RETRIES=0', async () => {
+    const p = await buildProvider({ GEMINI_MAX_RETRIES: 0 });
+    mockConstructorSpy.mockClear();
+    mockGenerateContent
+      .mockRejectedValueOnce(make429()) // fails primary
+      .mockResolvedValueOnce({ text: JSON.stringify(answerPayload({ answer: 'Fallback' })) }); // goes straight to fallback
+
+    const result = await p.generateStructuredResponse(testMessages);
+
+    expect(result.answer).toBe('Fallback');
+    expect(mockGenerateContent).toHaveBeenCalledTimes(2);
+    expect(mockGenerateContent.mock.calls[1][0].model).toBe('gemini-3.5-flash-lite');
+    // Client NOT recreated
+    expect(mockConstructorSpy).not.toHaveBeenCalled();
+    // No sleep
+    expect((p as any).sleep).not.toHaveBeenCalled();
+  });
+
+  it('TR: repeated transport failures → goes to fallback', async () => {
+    const p = await buildProvider({ GEMINI_MAX_RETRIES: 0 });
+    mockGenerateContent
+      .mockRejectedValueOnce(makeFetchFailed()) // attempt 1 primary
+      .mockRejectedValueOnce(makeFetchFailed()) // attempt 2 primary
+      .mockResolvedValueOnce({ text: JSON.stringify(answerPayload({ answer: 'Fallback' })) }); // fallback
+
+    const result = await p.generateStructuredResponse(testMessages);
+    expect(result.answer).toBe('Fallback');
+    expect(mockGenerateContent).toHaveBeenCalledTimes(3);
   });
 
   // ── I. 400/401/403 never retry ────────────────────────────────────────────
@@ -394,10 +496,10 @@ describe('GeminiLlmProvider', () => {
 
   // ── C. Retry hangs → fallback uses remaining budget ───────────────────────
 
-  it('C: primary 503 → retry AbortError → fallback succeeds', async () => {
+  it('C: primary 429 → retry AbortError → fallback succeeds', async () => {
     const p = await buildProvider({ GEMINI_MAX_RETRIES: 1 });
     mockGenerateContent
-      .mockRejectedValueOnce(make503())
+      .mockRejectedValueOnce(make429())
       .mockRejectedValueOnce(makeAbort())
       .mockResolvedValueOnce({ text: JSON.stringify(answerPayload({ answer: 'Fallback answer.' })) });
 
@@ -466,7 +568,7 @@ describe('GeminiLlmProvider', () => {
   it('F: each retry call gets a fresh, separate AbortSignal', async () => {
     const p = await buildProvider({ GEMINI_MAX_RETRIES: 1 });
     mockGenerateContent
-      .mockRejectedValueOnce(make503())
+      .mockRejectedValueOnce(make429())
       .mockResolvedValueOnce({ text: JSON.stringify(answerPayload()) });
 
     await p.generateStructuredResponse(testMessages);
@@ -481,7 +583,7 @@ describe('GeminiLlmProvider', () => {
   it('I (fallback): fallback model is gemini-3.5-flash-lite by default', async () => {
     const p = await buildProvider({ GEMINI_MAX_RETRIES: 0 });
     mockGenerateContent
-      .mockRejectedValueOnce(make503())
+      .mockRejectedValueOnce(make429())
       .mockResolvedValueOnce({ text: JSON.stringify(answerPayload()) });
 
     await p.generateStructuredResponse(testMessages);
@@ -492,7 +594,7 @@ describe('GeminiLlmProvider', () => {
   it('J: primary and fallback receive identical contents, schema, systemInstruction', async () => {
     const p = await buildProvider({ GEMINI_MAX_RETRIES: 0 });
     mockGenerateContent
-      .mockRejectedValueOnce(make503())
+      .mockRejectedValueOnce(make429())
       .mockResolvedValueOnce({ text: JSON.stringify(answerPayload()) });
 
     await p.generateStructuredResponse(testMessages);
@@ -516,7 +618,7 @@ describe('GeminiLlmProvider', () => {
   it('K: total calls = maxRetries+1 primary + 1 fallback when all fail', async () => {
     const maxRetries = 2;
     const p = await buildProvider({ GEMINI_MAX_RETRIES: maxRetries });
-    mockGenerateContent.mockRejectedValue(make503());
+    mockGenerateContent.mockRejectedValue(make429());
 
     await expect(p.generateStructuredResponse(testMessages)).rejects.toThrow(ServiceUnavailableException);
 
@@ -528,7 +630,7 @@ describe('GeminiLlmProvider', () => {
   it('K: maxRetries=0 → 1 primary + 1 fallback only', async () => {
     const p = await buildProvider({ GEMINI_MAX_RETRIES: 0 });
     mockGenerateContent
-      .mockRejectedValueOnce(make503())
+      .mockRejectedValueOnce(make429())
       .mockResolvedValueOnce({ text: JSON.stringify(answerPayload({ answer: 'Fallback.' })) });
 
     const result = await p.generateStructuredResponse(testMessages);
@@ -616,7 +718,7 @@ describe('GeminiLlmProvider', () => {
     // Simulate primary failure after 25000ms
     mockGenerateContent.mockImplementationOnce(async () => {
       await vi.advanceTimersByTimeAsync(25000);
-      throw make503();
+      throw make429();
     }).mockResolvedValueOnce({ text: JSON.stringify(answerPayload()) });
 
     await p.generateStructuredResponse(testMessages);
@@ -637,7 +739,7 @@ describe('GeminiLlmProvider', () => {
     // Simulate primary taking longer than total budget
     mockGenerateContent.mockImplementationOnce(async () => {
       await vi.advanceTimersByTimeAsync(40000);
-      throw make503();
+      throw make429();
     });
 
     const resultPromise = p.generateStructuredResponse(testMessages);

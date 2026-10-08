@@ -58,7 +58,7 @@ async function run() {
   for (const [name, text] of Object.entries(queries)) {
     const vec = await provider.embedText(text);
     const sim = cosineSimilarity(sourceVec, vec);
-    console.log(\`\${sim.toFixed(4)} : \${name}\`);
+    console.log(`${sim.toFixed(4)} : ${name}`);
   }
 }
 

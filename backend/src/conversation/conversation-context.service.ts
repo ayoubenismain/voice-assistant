@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ConversationService } from './conversation.service.js';
+import { ConversationFollowupResolverService } from './conversation-followup-resolver.service.js';
 import type {
   PendingClarification,
   AssembledConversationContext,
@@ -136,6 +137,7 @@ export class ConversationContextService {
   constructor(
     private readonly configService: ConfigService,
     private readonly conversationService: ConversationService,
+    private readonly followupResolver: ConversationFollowupResolverService,
   ) {
     this.recentMessageLimit = Number(
       this.configService.get<string>('CONVERSATION_RECENT_MESSAGE_LIMIT', '6'),
@@ -170,7 +172,7 @@ export class ConversationContextService {
     const pending = await this.conversationService.getPendingClarification(conversationId);
 
     // Step 3: Load recent messages (bounded)
-    const rawMessages = await this.conversationService.loadRecentMessages(
+    const rawMessages = await this.conversationService.loadRecentContextMessages(
       conversationId,
       this.recentMessageLimit,
     );
@@ -179,6 +181,7 @@ export class ConversationContextService {
     let effectiveQuery = currentMessage;
     let resolvedClarification: PendingClarification | null = null;
     let clarificationResolved = false;
+    let followupResolved = false;
 
     if (pending) {
       const matchedOption = pending.options.length > 0
@@ -203,6 +206,15 @@ export class ConversationContextService {
       }
     }
 
+    // Step 5b: Follow-up resolution (if not clarification)
+    if (!clarificationResolved) {
+      const followupResult = this.followupResolver.resolveFollowup(currentMessage, rawMessages);
+      if (followupResult.wasResolvedAsFollowup) {
+        effectiveQuery = followupResult.effectiveQuery;
+        followupResolved = true;
+      }
+    }
+
     // Step 6: Apply char budget to recent messages
     const boundedMessages = this.applyCharBudget(rawMessages);
 
@@ -211,6 +223,7 @@ export class ConversationContextService {
       effectiveQuery,
       resolvedClarification,
       clarificationResolved,
+      followupResolved,
       recentMessages: boundedMessages,
       conversationId,
     };

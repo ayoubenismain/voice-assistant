@@ -69,6 +69,8 @@ export class RetrievalService {
     const provider = this.embeddingService.getProviderName();
     const model = this.embeddingService.getModelName();
     const dimensions = this.embeddingService.getDimensions();
+    
+    this.logger.debug(`[DEBUG] Retrieval using provider=${provider}, model=${model}`);
 
     const normalized = this.normalizer.normalize(query);
     const useNormalized = normalized.expansionApplied;
@@ -131,6 +133,10 @@ export class RetrievalService {
         ORDER BY c.embedding <=> ${originalVecStr}::vector
         LIMIT ${candidateK};
       `;
+      this.logger.debug(`[DEBUG] originalResults count: ${originalResults.length}`);
+      if (originalResults.length > 0) {
+        this.logger.debug(`[DEBUG] top similarity: ${originalResults[0].similarity}`);
+      }
 
       // 3B. Semantic Search (Normalized) — only when Darija/Arabic expansion applied
       let normalizedResults: RawSemanticSearchRow[] = [];
@@ -186,6 +192,9 @@ export class RetrievalService {
           ORDER BY similarity DESC
           LIMIT ${candidateK};
         `;
+        // --- DEBUG ---
+        this.logger.debug(`[DEBUG] lexicalResults count: ${lexicalResults.length}`);
+        // -------------
       }
 
       // 4. Candidate Union

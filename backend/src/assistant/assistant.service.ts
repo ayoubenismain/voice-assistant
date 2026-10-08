@@ -85,7 +85,7 @@ export class AssistantService {
       dto.query.trim(),
     );
 
-    const { conversationId, effectiveQuery, resolvedClarification, clarificationResolved, recentMessages } = ctx;
+    const { conversationId, effectiveQuery, resolvedClarification, clarificationResolved, followupResolved, recentMessages } = ctx;
 
     this.logger.log(
       `[AssistantService] conv userId=…${userId.slice(-6)} ` +
@@ -142,6 +142,7 @@ export class AssistantService {
             scopeReasonCode: scopeDecision.reason,
             effectiveQuery,
             clarificationResolved,
+            followupResolved,
           },
         }),
       };
@@ -230,6 +231,11 @@ export class AssistantService {
       }
     }
 
+    this.logger.debug(`[DEBUG] sourceMap keys: ${Array.from(sourceMap.keys()).join(', ')}`);
+    this.logger.debug(`[DEBUG] LLM usedSourceIds: ${JSON.stringify(llmResponse.usedSourceIds)}`);
+    this.logger.debug(`[DEBUG] validSources length: ${validSources.length}`);
+    this.logger.debug(`[DEBUG] LLM type: ${llmResponse.type}`);
+
     let finalType = llmResponse.type;
     let answer = llmResponse.answer;
 
@@ -246,6 +252,7 @@ export class AssistantService {
         dto.query,
         persistContent,
         finalType,
+        { effectiveQuery, followupResolved }
       );
     } catch (e) {
       this.logger.warn(`[AssistantService] non-fatal: failed to persist exchange: ${(e as Error).message}`);
@@ -271,7 +278,7 @@ export class AssistantService {
 
     return this.buildResponse(dto, finalType, answer, llmResponse, validSources, {
       retrievalMs, contextBuildMs, generationMs, totalMs: Date.now() - startTime,
-    }, effectiveQuery, retrievalResult, sourceMap, scopeDecision, clarificationResolved);
+    }, effectiveQuery, retrievalResult, sourceMap, scopeDecision, clarificationResolved, followupResolved);
   }
 
   // ---------------------------------------------------------------------------
@@ -465,6 +472,7 @@ export class AssistantService {
     sourceMap: Map<string, RagContextSource>,
     scopeDecision: any,
     clarificationResolved: boolean,
+    followupResolved?: boolean,
   ): AssistantResponse {
     const response: AssistantResponse = {
       type: finalType as AssistantResponse['type'],
@@ -491,6 +499,7 @@ export class AssistantService {
       response.debug = {
         effectiveQuery,
         clarificationResolved,
+        followupResolved,
         retrievedCount: retrievalResult.results.length,
         selectedContextSourceIds: Array.from(sourceMap.keys()),
         detectedIntents: retrievalResult.retrieval.detectedIntents,

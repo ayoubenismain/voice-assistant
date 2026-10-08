@@ -243,4 +243,87 @@ describe('ConversationService', () => {
   it('5b. resetConversation on non-existent userId does nothing gracefully', async () => {
     await expect(service.resetConversation('nobody')).resolves.not.toThrow();
   });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Test 6: out_of_scope filtering (Phase 8G.1)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  it('6a. saveExchange sets responseType on both USER and ASSISTANT', async () => {
+    const conv = await service.getOrCreateConversation('student-a');
+    await service.saveExchange(conv.id, 'What is the weather?', 'I only help with ISSATSO.', 'out_of_scope');
+    const msgs = await service.loadRecentMessages(conv.id, 10);
+    expect(msgs).toHaveLength(2);
+    expect(msgs[0].role).toBe('USER');
+    expect(msgs[0].responseType).toBe('out_of_scope');
+    expect(msgs[1].role).toBe('ASSISTANT');
+    expect(msgs[1].responseType).toBe('out_of_scope');
+  });
+
+  it('6b. loadRecentContextMessages excludes out_of_scope exchanges (both user and assistant)', async () => {
+    const conv = await service.getOrCreateConversation('student-context');
+    // Save valid exchange
+    await service.saveExchange(conv.id, 'Q1', 'A1', 'answer');
+    // Save out_of_scope exchange
+    await service.saveExchange(conv.id, 'Q2_Weather', 'A2_Weather', 'out_of_scope');
+    // Save another valid exchange
+    await service.saveExchange(conv.id, 'Q3', 'A3', 'clarification');
+
+    const fullHistory = await service.loadRecentMessages(conv.id, 10);
+    expect(fullHistory).toHaveLength(6);
+
+    const contextMsgs = await service.loadRecentContextMessages(conv.id, 10);
+    // Should exclude the 2 out_of_scope messages
+    expect(contextMsgs).toHaveLength(4);
+    
+    // Check they are the correct ones
+    expect(contextMsgs.map(m => m.content)).toEqual(['Q1', 'A1', 'Q3', 'A3']);
+  });
+
+  it('6c. loadRecentContextMessages correctly handles legacy data (user responseType = null)', async () => {
+    const conv = await service.getOrCreateConversation('student-legacy');
+    
+    // We must manually construct the legacy DB state where USER responseType is null
+    const baseDate = Date.now();
+    await prisma.conversationMessage.create({
+      data: { conversationId: conv.id, role: 'USER', content: 'Legacy weather', responseType: null }
+    });
+    // Ensure chronological ordering by adding a slight delay or trusting the mock's monotonically increasing timestamp
+    await prisma.conversationMessage.create({
+      data: { conversationId: conv.id, role: 'ASSISTANT', content: 'Legacy rejection', responseType: 'out_of_scope' }
+    });
+
+    const contextMsgs = await service.loadRecentContextMessages(conv.id, 10);
+    // Both should be excluded, even though USER had responseType: null
+    expect(contextMsgs).toHaveLength(0);
+  });
+
+  it('6d. out_of_scope messages do not consume the context limit', async () => {
+    const conv = await service.getOrCreateConversation('student-limit');
+    
+    // Save 3 valid exchanges (6 messages total)
+    await service.saveExchange(conv.id, 'V1', 'A1', 'answer');
+    await service.saveExchange(conv.id, 'V2', 'A2', 'answer');
+    await service.saveExchange(conv.id, 'V3', 'A3', 'answer');
+    
+    // Save 4 out_of_scope exchanges (8 messages total)
+    await service.saveExchange(conv.id, 'O1', 'O1', 'out_of_scope');
+    await service.saveExchange(conv.id, 'O2', 'O2', 'out_of_scope');
+    await service.saveExchange(conv.id, 'O3', 'O3', 'out_of_scope');
+    await service.saveExchange(conv.id, 'O4', 'O4', 'out_of_scope');
+
+    // If limit is 6, and we didn't filter before limiting, we'd get 0 valid messages.
+    const contextMsgs = await service.loadRecentContextMessages(conv.id, 6);
+    expect(contextMsgs).toHaveLength(6);
+    expect(contextMsgs.map(m => m.content)).toEqual(['V1', 'A1', 'V2', 'A2', 'V3', 'A3']);
+  });
+
+  it('6e. no_verified_info exchanges remain context-eligible', async () => {
+    const conv = await service.getOrCreateConversation('student-no-info');
+    await service.saveExchange(conv.id, 'Q', 'A', 'no_verified_info');
+    
+    const contextMsgs = await service.loadRecentContextMessages(conv.id, 10);
+    expect(contextMsgs).toHaveLength(2);
+    expect(contextMsgs[0].responseType).toBe('no_verified_info');
+    expect(contextMsgs[1].responseType).toBe('no_verified_info');
+  });
 });

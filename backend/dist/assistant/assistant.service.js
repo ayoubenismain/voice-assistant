@@ -56,7 +56,7 @@ let AssistantService = AssistantService_1 = class AssistantService {
         let contextBuildMs = 0;
         let generationMs = 0;
         const ctx = await this.conversationContextService.assembleContext(userId, dto.query.trim());
-        const { conversationId, effectiveQuery, resolvedClarification, clarificationResolved, recentMessages } = ctx;
+        const { conversationId, effectiveQuery, resolvedClarification, clarificationResolved, followupResolved, recentMessages } = ctx;
         this.logger.log(`[AssistantService] conv userId=…${userId.slice(-6)} ` +
             `clarificationResolved=${clarificationResolved} ` +
             `effectiveQuery length=${effectiveQuery.length}`);
@@ -94,6 +94,7 @@ let AssistantService = AssistantService_1 = class AssistantService {
                         scopeReasonCode: scopeDecision.reason,
                         effectiveQuery,
                         clarificationResolved,
+                        followupResolved,
                     },
                 }),
             };
@@ -162,6 +163,10 @@ let AssistantService = AssistantService_1 = class AssistantService {
                 }
             }
         }
+        this.logger.debug(`[DEBUG] sourceMap keys: ${Array.from(sourceMap.keys()).join(', ')}`);
+        this.logger.debug(`[DEBUG] LLM usedSourceIds: ${JSON.stringify(llmResponse.usedSourceIds)}`);
+        this.logger.debug(`[DEBUG] validSources length: ${validSources.length}`);
+        this.logger.debug(`[DEBUG] LLM type: ${llmResponse.type}`);
         let finalType = llmResponse.type;
         let answer = llmResponse.answer;
         if (finalType === 'answer' && validSources.length === 0) {
@@ -170,7 +175,7 @@ let AssistantService = AssistantService_1 = class AssistantService {
         }
         const persistContent = this.buildPersistContent(finalType, llmResponse, dto.query);
         try {
-            await this.conversationService.saveExchange(conversationId, dto.query, persistContent, finalType);
+            await this.conversationService.saveExchange(conversationId, dto.query, persistContent, finalType, { effectiveQuery, followupResolved });
         }
         catch (e) {
             this.logger.warn(`[AssistantService] non-fatal: failed to persist exchange: ${e.message}`);
@@ -194,7 +199,7 @@ let AssistantService = AssistantService_1 = class AssistantService {
         }
         return this.buildResponse(dto, finalType, answer, llmResponse, validSources, {
             retrievalMs, contextBuildMs, generationMs, totalMs: Date.now() - startTime,
-        }, effectiveQuery, retrievalResult, sourceMap, scopeDecision, clarificationResolved);
+        }, effectiveQuery, retrievalResult, sourceMap, scopeDecision, clarificationResolved, followupResolved);
     }
     async askStateless(dto, startTime, retrievalMs, contextBuildMs, generationMs) {
         const scopeDecision = await this.scopeGuard.decide(dto.query);
@@ -327,7 +332,7 @@ let AssistantService = AssistantService_1 = class AssistantService {
         }
         return buildNoVerifiedInfoFallback(originalQuery);
     }
-    buildResponse(dto, finalType, answer, llmResponse, validSources, timing, effectiveQuery, retrievalResult, sourceMap, scopeDecision, clarificationResolved) {
+    buildResponse(dto, finalType, answer, llmResponse, validSources, timing, effectiveQuery, retrievalResult, sourceMap, scopeDecision, clarificationResolved, followupResolved) {
         const response = {
             type: finalType,
             query: dto.query,
@@ -353,6 +358,7 @@ let AssistantService = AssistantService_1 = class AssistantService {
             response.debug = {
                 effectiveQuery,
                 clarificationResolved,
+                followupResolved,
                 retrievedCount: retrievalResult.results.length,
                 selectedContextSourceIds: Array.from(sourceMap.keys()),
                 detectedIntents: retrievalResult.retrieval.detectedIntents,

@@ -40,6 +40,7 @@ interface GeminiCallParams {
 
 interface ClassifiedError {
   isTransient: boolean;
+  isTransientTransport: boolean;
   isAuthError: boolean;
   safeMessage: string;
 }
@@ -54,6 +55,12 @@ function classifyError(error: unknown): ClassifiedError {
     typeof raw?.message === 'string' ? raw.message : 'Unknown error';
   const lower = safeMessage.toLowerCase();
 
+  const cause = raw?.cause as Record<string, unknown> | undefined;
+  const causeCode = typeof cause?.code === 'string' ? cause.code.toLowerCase() : '';
+  const causeMessage = typeof cause?.message === 'string' ? cause.message.toLowerCase() : '';
+  const causeSyscall = typeof cause?.syscall === 'string' ? cause.syscall : undefined;
+  const statusNumber = typeof raw?.status === 'number' ? raw.status : undefined;
+
   // Hard auth/config — never retry
   if (
     lower.includes('api_key') ||
@@ -66,9 +73,12 @@ function classifyError(error: unknown): ClassifiedError {
     lower.includes('status":"invalid_argument"') ||
     lower.includes('"code":401') ||
     lower.includes('"code":403') ||
-    lower.includes('"code":400')
+    lower.includes('"code":400') ||
+    statusNumber === 400 ||
+    statusNumber === 401 ||
+    statusNumber === 403
   ) {
-    return { isTransient: false, isAuthError: true, safeMessage };
+    return { isTransient: false, isTransientTransport: false, isAuthError: true, safeMessage };
   }
 
   // Abort / timeout — transient
@@ -81,25 +91,43 @@ function classifyError(error: unknown): ClassifiedError {
 
   // Capacity / rate-limit — transient
   const isCapacity =
-    lower.includes('503') ||
-    lower.includes('unavailable') ||
     lower.includes('429') ||
     lower.includes('resource_exhausted') ||
     lower.includes('quota') ||
     lower.includes('rate') ||
     lower.includes('overloaded') ||
-    lower.includes('high demand');
+    lower.includes('high demand') ||
+    statusNumber === 429;
 
-  // Network errors — transient
+  // Network errors — transient transport
   const isNetwork =
+    lower.includes('fetch failed') ||
     lower.includes('network') ||
     lower.includes('econnrefused') ||
     lower.includes('econnreset') ||
     lower.includes('etimedout') ||
-    lower.includes('fetch failed');
+    lower.includes('eai_again') ||
+    lower.includes('enetunreach') ||
+    lower.includes('und_err_connect_timeout') ||
+    lower.includes('und_err_socket') ||
+    lower.includes('socket hang up') ||
+    causeCode.includes('econnreset') ||
+    causeCode.includes('etimedout') ||
+    causeCode.includes('eai_again') ||
+    causeCode.includes('enetunreach') ||
+    causeCode.includes('econnrefused') ||
+    causeCode.includes('und_err') ||
+    causeMessage.includes('socket') ||
+    lower.includes('502') ||
+    lower.includes('503') ||
+    lower.includes('504') ||
+    statusNumber === 502 ||
+    statusNumber === 503 ||
+    statusNumber === 504;
 
   return {
     isTransient: isAbort || isCapacity || isNetwork,
+    isTransientTransport: isNetwork,
     isAuthError: false,
     safeMessage,
   };
@@ -110,7 +138,12 @@ function getSafeErrorMetadata(error: unknown) {
   const status = typeof raw?.status === 'number' || typeof raw?.status === 'string' ? raw.status : undefined;
   const code = typeof raw?.code === 'number' || typeof raw?.code === 'string' ? raw.code : undefined;
   const name = typeof raw?.name === 'string' ? raw.name : undefined;
-  return { status, code, name };
+  
+  const cause = raw?.cause as any;
+  const causeCode = cause?.code ? String(cause.code) : undefined;
+  const causeSyscall = cause?.syscall ? String(cause.syscall) : undefined;
+  
+  return { status, code, name, causeCode, causeSyscall };
 }
 
 /**
@@ -132,7 +165,7 @@ function backoffMs(attempt: number): number {
 @Injectable()
 export class GeminiLlmProvider implements LlmProvider {
   private readonly logger = new Logger(GeminiLlmProvider.name);
-  private readonly client: GoogleGenAI;
+  private client: GoogleGenAI;
 
   private readonly defaultModel: string;
   private readonly fallbackModel: string;
@@ -156,6 +189,12 @@ export class GeminiLlmProvider implements LlmProvider {
     this.totalTimeoutMs   = Number(this.configService.get<number>('GEMINI_TOTAL_TIMEOUT_MS', 40000));
     this.defaultTemperature = Number(this.configService.get<number>('LLM_TEMPERATURE', 0));
 
+    this.client = new GoogleGenAI({ apiKey });
+  }
+
+  private recreateClient() {
+    const apiKey = this.configService.get<string>('GEMINI_API_KEY', '');
+    this.logger.log(`[Gemini] recreating GoogleGenAI client due to transient transport failure`);
     this.client = new GoogleGenAI({ apiKey });
   }
 
@@ -275,7 +314,10 @@ export class GeminiLlmProvider implements LlmProvider {
 
     let lastTransientError: unknown = null;
 
-    for (let attempt = 1; attempt <= this.maxRetries + 1; attempt++) {
+    let transportRetries = 0;
+    let attempt = 1;
+
+    while (attempt <= this.maxRetries + 1 + transportRetries) {
 
       // Budget check before any backoff sleep
       const remainingBeforeSleep = totalDeadline - Date.now();
@@ -288,11 +330,14 @@ export class GeminiLlmProvider implements LlmProvider {
 
       // Backoff sleep (skip first attempt)
       if (attempt > 1) {
-        const wait = Math.min(backoffMs(attempt - 1), remainingBeforeSleep - 1);
+        // Only retry once. So maxRetries + 1 should be honored, but if this maxRetries was 0, it means 1 attempt.
+        // Wait, the prompt says "retry ONCE". We'll just stick to a fixed backoff for transient transport.
+        const wait = 400; // deterministic bounded backoff
+        const actualWait = Math.min(wait, remainingBeforeSleep - 1);
         this.logger.warn(
-          `[Gemini] retry ${attempt - 1} — waiting ${Math.round(wait)}ms before next attempt…`,
+          `[Gemini] retry ${attempt - 1} — waiting ${Math.round(actualWait)}ms before next attempt…`,
         );
-        await this.sleep(wait);
+        await this.sleep(actualWait);
 
         if (Date.now() >= totalDeadline) {
           this.logger.warn(`[Gemini] total budget exhausted after backoff (${elapsed()}ms).`);
@@ -374,10 +419,23 @@ export class GeminiLlmProvider implements LlmProvider {
         }
 
         lastTransientError = error;
-        this.logger.warn(
-          `[Gemini] transient error on attempt ${attempt} elapsedMs=${elapsed()} status=${meta.status} code=${meta.code} msg="${classified.safeMessage}"`
-        );
+
+        if (classified.isTransientTransport) {
+          this.logger.warn(
+            `[Gemini] type=transient_transport attempt=${attempt} elapsedMs=${elapsed()} msg="${classified.safeMessage}" causeCode=${meta.causeCode} causeSyscall=${meta.causeSyscall}`
+          );
+          // Recreate client for transient transport failures
+          this.recreateClient();
+          if (transportRetries === 0) {
+            transportRetries = 1;
+          }
+        } else {
+          this.logger.warn(
+            `[Gemini] transient error on attempt ${attempt} elapsedMs=${elapsed()} status=${meta.status} code=${meta.code} msg="${classified.safeMessage}"`
+          );
+        }
       }
+      attempt++;
     }
 
     // ── Fallback model — single attempt ────────────────────────────────────
@@ -428,7 +486,7 @@ export class GeminiLlmProvider implements LlmProvider {
       const classified = classifyError(fallbackError);
       const meta = getSafeErrorMetadata(fallbackError);
       this.logger.error(
-        `[Gemini] fallback also failed elapsedMs=${elapsed()} status=${meta.status} code=${meta.code} msg="${classified.safeMessage}"`
+        `[Gemini] fallback also failed elapsedMs=${elapsed()} status=${meta.status} code=${meta.code} msg="${classified.safeMessage}" causeCode=${meta.causeCode}`
       );
       const originalMessage = classifyError(lastTransientError).safeMessage;
       throw new ServiceUnavailableException(`LLM Provider Error: ${originalMessage}`);

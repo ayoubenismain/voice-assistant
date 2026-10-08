@@ -32,6 +32,7 @@ export interface ConversationContextMessage {
   role: 'USER' | 'ASSISTANT' | 'SYSTEM';
   content: string;
   responseType?: string | null;
+  metadata?: any;
   createdAt: Date;
 }
 
@@ -60,6 +61,9 @@ export interface AssembledConversationContext {
    * the pending clarification (true) or treated as a new question (false).
    */
   clarificationResolved: boolean;
+
+  /** Whether the current message was resolved as a follow-up. */
+  followupResolved: boolean;
 
   /**
    * Recent messages selected for LLM context window.

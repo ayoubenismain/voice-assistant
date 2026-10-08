@@ -109,6 +109,7 @@ describe('AssistantService', () => {
       setPendingClarification: vi.fn().mockResolvedValue(undefined),
       clearPendingClarification: vi.fn().mockResolvedValue(undefined),
       loadRecentMessages: vi.fn().mockResolvedValue([]),
+      loadRecentContextMessages: vi.fn().mockResolvedValue([]),
       saveExchange: vi.fn().mockResolvedValue(undefined),
     };
 

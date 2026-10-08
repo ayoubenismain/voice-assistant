@@ -91,7 +91,7 @@ function makeMockConversationService(pending: PendingClarification | null = null
   return {
     getOrCreateConversation: vi.fn().mockResolvedValue({ id: 'conv-123' }),
     getPendingClarification: vi.fn().mockResolvedValue(pending),
-    loadRecentMessages: vi.fn().mockResolvedValue(recentMsgs),
+    loadRecentContextMessages: vi.fn().mockResolvedValue(recentMsgs),
   };
 }
 
@@ -102,6 +102,16 @@ function makeMockConfigService(limit = '6', maxChars = '4000') {
       if (key === 'CONVERSATION_CONTEXT_MAX_CHARS') return maxChars;
       return def;
     }),
+  };
+}
+
+function makeMockFollowupResolverService() {
+  return {
+    resolveFollowup: vi.fn((currentMessage: string) => ({
+      rawQuery: currentMessage,
+      effectiveQuery: currentMessage,
+      wasResolvedAsFollowup: false,
+    })),
   };
 }
 
@@ -117,6 +127,7 @@ describe('ConversationContextService', () => {
     const svc = new ConversationContextService(
       makeMockConfigService() as any,
       makeMockConversationService(BASE_PENDING) as any,
+      makeMockFollowupResolverService() as any,
     );
     const ctx = await svc.assembleContext('student-a', 'Licence');
     expect(ctx.clarificationResolved).toBe(true);
@@ -129,6 +140,7 @@ describe('ConversationContextService', () => {
     const svc = new ConversationContextService(
       makeMockConfigService() as any,
       makeMockConversationService(BASE_PENDING) as any,
+      makeMockFollowupResolverService() as any,
     );
     const ctx = await svc.assembleContext('student-a', 'Master');
     expect(ctx.clarificationResolved).toBe(true);
@@ -139,6 +151,7 @@ describe('ConversationContextService', () => {
     const svc = new ConversationContextService(
       makeMockConfigService() as any,
       makeMockConversationService(BASE_PENDING) as any,
+      makeMockFollowupResolverService() as any,
     );
     const ctx = await svc.assembleContext('student-a', 'ingénieur');
     expect(ctx.clarificationResolved).toBe(true);
@@ -149,6 +162,7 @@ describe('ConversationContextService', () => {
     const svc = new ConversationContextService(
       makeMockConfigService() as any,
       makeMockConversationService(BASE_PENDING) as any,
+      makeMockFollowupResolverService() as any,
     );
     const ctx = await svc.assembleContext('student-a', 'prépa');
     expect(ctx.clarificationResolved).toBe(true);
@@ -159,6 +173,7 @@ describe('ConversationContextService', () => {
     const svc = new ConversationContextService(
       makeMockConfigService() as any,
       makeMockConversationService(BASE_PENDING) as any,
+      makeMockFollowupResolverService() as any,
     );
     const ctx = await svc.assembleContext('student-a', 'What is the capital of France?');
     expect(ctx.clarificationResolved).toBe(false);
@@ -170,6 +185,7 @@ describe('ConversationContextService', () => {
     const svc = new ConversationContextService(
       makeMockConfigService() as any,
       makeMockConversationService(null) as any,
+      makeMockFollowupResolverService() as any,
     );
     const ctx = await svc.assembleContext('student-a', '9adeh soum inscription?');
     expect(ctx.effectiveQuery).toBe('9adeh soum inscription?');
@@ -180,6 +196,7 @@ describe('ConversationContextService', () => {
     const svc = new ConversationContextService(
       makeMockConfigService() as any,
       makeMockConversationService(null) as any,
+      makeMockFollowupResolverService() as any,
     );
     const ctx = await svc.assembleContext('student-a', 'test');
     expect(ctx.conversationId).toBe('conv-123');
@@ -188,14 +205,15 @@ describe('ConversationContextService', () => {
   // ── Context limits ──────────────────────────────────────────────────────
 
   it('recentMessages respects CONVERSATION_RECENT_MESSAGE_LIMIT config', async () => {
-    // The service passes the limit to loadRecentMessages
+    // The service passes the limit to loadRecentContextMessages
     const convSvc = makeMockConversationService(null);
     const svc = new ConversationContextService(
       makeMockConfigService('4') as any,
       convSvc as any,
+      makeMockFollowupResolverService() as any,
     );
     await svc.assembleContext('student-a', 'test');
-    expect(convSvc.loadRecentMessages).toHaveBeenCalledWith('conv-123', 4);
+    expect(convSvc.loadRecentContextMessages).toHaveBeenCalledWith('conv-123', 4);
   });
 
   it('applyCharBudget trims messages exceeding CONVERSATION_CONTEXT_MAX_CHARS', async () => {
@@ -209,6 +227,7 @@ describe('ConversationContextService', () => {
     const svc = new ConversationContextService(
       makeMockConfigService('6', '350') as any,
       makeMockConversationService(null, recentMsgs) as any,
+      makeMockFollowupResolverService() as any,
     );
     const ctx = await svc.assembleContext('student-a', 'new question');
     // Only 1 of 3 messages fits in 350 chars (each is 200)
@@ -224,6 +243,7 @@ describe('ConversationContextService', () => {
     const svc = new ConversationContextService(
       makeMockConfigService('6', '200') as any,
       makeMockConversationService(BASE_PENDING, recentMsgs) as any,
+      makeMockFollowupResolverService() as any,
     );
     const ctx = await svc.assembleContext('student-a', 'Licence');
     // Even with trimmed history, clarification resolution still worked
@@ -235,6 +255,7 @@ describe('ConversationContextService', () => {
     const svc = new ConversationContextService(
       makeMockConfigService('8', '5000') as any,
       makeMockConversationService() as any,
+      makeMockFollowupResolverService() as any,
     );
     expect(svc.recentMessageLimitValue).toBe(8);
     expect(svc.contextMaxCharsValue).toBe(5000);

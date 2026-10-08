@@ -65,6 +65,7 @@ export class ConversationService {
         role: true,
         content: true,
         responseType: true,
+        metadata: true,
         createdAt: true,
       },
     });
@@ -74,8 +75,96 @@ export class ConversationService {
       role: r.role as 'USER' | 'ASSISTANT' | 'SYSTEM',
       content: r.content,
       responseType: r.responseType,
+      metadata: r.metadata,
       createdAt: r.createdAt,
     }));
+  }
+
+  /**
+   * Loads the N most recent context-eligible messages for the LLM.
+   * Filters out 'out_of_scope' exchanges (both USER and ASSISTANT messages).
+   * 
+   * Uses a bounded over-fetch window (limit * 4) to handle legacy data pairing
+   * in-memory (where older USER messages might have responseType=null),
+   * ensuring we still yield up to 'limit' valid messages after filtering.
+   */
+  async loadRecentContextMessages(
+    conversationId: string,
+    limit: number,
+  ): Promise<ConversationContextMessage[]> {
+    // Over-fetch to guarantee we have enough messages after filtering out out_of_scope.
+    const overFetchLimit = limit * 4;
+
+    const rows = await this.prisma.conversationMessage.findMany({
+      where: { conversationId },
+      orderBy: [{ createdAt: 'desc' }, { role: 'desc' }],
+      take: overFetchLimit,
+      select: {
+        role: true,
+        content: true,
+        responseType: true,
+        metadata: true,
+        createdAt: true,
+      },
+    });
+
+    const eligible: ConversationContextMessage[] = [];
+    let skipNextUser = false;
+
+    // rows are ordered newest to oldest
+    for (const r of rows) {
+      if (r.role === 'ASSISTANT') {
+        if (r.responseType === 'out_of_scope') {
+          // Exclude this assistant message, and mark to exclude the immediately preceding user message (legacy fallback)
+          skipNextUser = true;
+          continue;
+        } else {
+          skipNextUser = false;
+          eligible.push({
+            role: 'ASSISTANT',
+            content: r.content,
+            responseType: r.responseType,
+            metadata: r.metadata,
+            createdAt: r.createdAt,
+          });
+        }
+      } else if (r.role === 'USER') {
+        if (r.responseType === 'out_of_scope') {
+          // Explicitly marked out_of_scope (new data)
+          skipNextUser = false;
+          continue;
+        }
+        if (skipNextUser) {
+          // Legacy fallback: preceding user message of an out_of_scope assistant message
+          skipNextUser = false;
+          continue;
+        }
+        // Valid user message
+        eligible.push({
+          role: 'USER',
+          content: r.content,
+          responseType: r.responseType,
+          metadata: r.metadata,
+          createdAt: r.createdAt,
+        });
+      } else {
+        // SYSTEM or other
+        eligible.push({
+          role: r.role as 'SYSTEM',
+          content: r.content,
+          responseType: r.responseType,
+          metadata: r.metadata,
+          createdAt: r.createdAt,
+        });
+      }
+
+      if (eligible.length >= limit) {
+        break;
+      }
+    }
+
+    // Reverse to chronological order
+    return eligible.reverse();
   }
 
   /**
@@ -87,6 +176,7 @@ export class ConversationService {
     userContent: string,
     assistantContent: string,
     responseType: string,
+    userMetadata?: any,
   ): Promise<void> {
     await this.prisma.$transaction([
       this.prisma.conversationMessage.create({
@@ -94,6 +184,8 @@ export class ConversationService {
           conversationId,
           role: 'USER',
           content: userContent,
+          responseType,
+          metadata: userMetadata || Prisma.JsonNull,
         },
       }),
       this.prisma.conversationMessage.create({
