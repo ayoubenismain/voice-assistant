@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>As2el Semi — Backend Test UI</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: #f0f2f5;
+      margin: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    #app {
+      background-color: #fff;
+      width: 100%;
+      max-width: 600px;
+      height: 90vh;
+      display: flex;
+      flex-direction: column;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      overflow: hidden;
+    }
+    header {
+      background-color: #202c33;
+      color: #fff;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 1.2rem;
+      text-align: center;
+    }
+    .header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.9rem;
+    }
+    .controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    input, button {
+      font-family: inherit;
+      font-size: 0.9rem;
+      padding: 6px 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    button {
+      background-color: #00a884;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    button:hover {
+      background-color: #008f6f;
+    }
+    button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+    .status-dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 4px;
+    }
+    .online { background-color: #00a884; }
+    .offline { background-color: #ea0038; }
+    
+    #chat-container {
+      flex: 1;
+      padding: 16px;
+      overflow-y: auto;
+      background-color: #efeae2;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .message {
+      max-width: 80%;
+      padding: 10px 14px;
+      border-radius: 8px;
+      position: relative;
+      line-height: 1.4;
+      word-wrap: break-word;
+    }
+    .message.user {
+      align-self: flex-end;
+      background-color: #d9fdd3;
+      border-top-right-radius: 0;
+    }
+    .message.assistant {
+      align-self: flex-start;
+      background-color: #fff;
+      border-top-left-radius: 0;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    }
+    .message.system {
+      align-self: center;
+      background-color: #ffebeb;
+      color: #d32f2f;
+      font-size: 0.85rem;
+      text-align: center;
+      border-radius: 4px;
+      padding: 6px 10px;
+    }
+    .badge {
+      display: inline-block;
+      background-color: #ff9800;
+      color: #fff;
+      font-size: 0.7rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-bottom: 6px;
+      font-weight: bold;
+    }
+    .badge.out-of-scope {
+      background-color: #f44336;
+    }
+    .options-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .option-btn {
+      background-color: #e0f2f1;
+      color: #00695c;
+      border: 1px solid #b2dfdb;
+      padding: 6px 12px;
+      border-radius: 16px;
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+    .option-btn:hover {
+      background-color: #b2dfdb;
+    }
+    .sources-details {
+      margin-top: 10px;
+      font-size: 0.8rem;
+      background-color: #f9f9f9;
+      border: 1px solid #eee;
+      border-radius: 4px;
+      padding: 8px;
+    }
+    .sources-details summary {
+      cursor: pointer;
+      font-weight: bold;
+      color: #555;
+    }
+    .source-item {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid #eee;
+    }
+    .debug-panel {
+      margin-top: 10px;
+      font-size: 0.75rem;
+      color: #888;
+      font-family: monospace;
+      background-color: #fafafa;
+      padding: 6px;
+      border-radius: 4px;
+    }
+    footer {
+      background-color: #f0f2f5;
+      padding: 12px 16px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    #text-input {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      border-radius: 20px;
+      outline: none;
+    }
+    .icon-btn {
+      background: none;
+      border: none;
+      font-size: 1.2rem;
+      color: #54656f;
+      cursor: pointer;
+      padding: 8px;
+    }
+    .icon-btn:hover {
+      color: #00a884;
+    }
+    .recording {
+      color: #ea0038 !important;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.5; }
+      100% { opacity: 1; }
+    }
+    .loading {
+      font-style: italic;
+      color: #888;
+    }
+  </style>
+</head>
+<body>
+
+<div id="app">
+  <header>
+    <h1>As2el Semi — Backend Test UI</h1>
+    <div class="header-row">
+      <div class="controls">
+        <label for="userId">User ID:</label>
+        <input type="text" id="userId" value="phase8-browser-test-1" style="width: 140px;">
+        <button id="btn-new-user" style="background-color: #3b4a54;">New Test User</button>
+      </div>
+      <div class="controls">
+        <span id="backend-status"><span class="status-dot offline"></span>Offline</span>
+        <button id="btn-retry" style="background-color: #3b4a54; padding: 4px 8px; font-size: 0.8rem;">Retry</button>
+        <button id="btn-clear" style="background-color: #ea0038; padding: 4px 8px; font-size: 0.8rem;">Clear Screen</button>
+      </div>
+    </div>
+  </header>
+
+  <div id="chat-container">
+    <!-- Messages will appear here -->
+  </div>
+
+  <footer>
+    <input type="text" id="text-input" placeholder="Type a message..." autocomplete="off">
+    <button id="btn-send" class="icon-btn" title="Send">➤</button>
+    <button id="btn-record" class="icon-btn" title="Record Voice">🎤</button>
+  </footer>
+</div>
+
+<script>
+  const BACKEND_URL = 'http://localhost:3001';
+  
+  const chatContainer = document.getElementById('chat-container');
+  const textInput = document.getElementById('text-input');
+  const btnSend = document.getElementById('btn-send');
+  const btnRecord = document.getElementById('btn-record');
+  const userIdInput = document.getElementById('userId');
+  const btnNewUser = document.getElementById('btn-new-user');
+  const btnRetry = document.getElementById('btn-retry');
+  const btnClear = document.getElementById('btn-clear');
+  const backendStatus = document.getElementById('backend-status');
+
+  // Load user ID from local storage
+  if (localStorage.getItem('as2el_test_userId')) {
+    userIdInput.value = localStorage.getItem('as2el_test_userId');
+  }
+
+  userIdInput.addEventListener('change', () => {
+    localStorage.setItem('as2el_test_userId', userIdInput.value);
+    chatContainer.innerHTML = '';
+  });
+
+  btnNewUser.addEventListener('click', () => {
+    const newId = `phase8-browser-${Date.now()}`;
+    userIdInput.value = newId;
+    localStorage.setItem('as2el_test_userId', newId);
+    chatContainer.innerHTML = '';
+  });
+
+  btnClear.addEventListener('click', () => {
+    chatContainer.innerHTML = '';
+  });
+
+  // Backend Health Check
+  async function checkHealth() {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/health`);
+      if (res.ok) {
+        backendStatus.innerHTML = '<span class="status-dot online"></span>Connected';
+      } else {
+        throw new Error('Not ok');
+      }
+    } catch (err) {
+      backendStatus.innerHTML = '<span class="status-dot offline"></span>Error';
+    }
+  }
+
+  btnRetry.addEventListener('click', checkHealth);
+  checkHealth();
+
+  // Chat UI Functions
+  function appendUserMessage(text, isVoice = false) {
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'message user';
+    msgDiv.innerHTML = `<strong>${isVoice ? '🎤 You' : 'You'}</strong><br>${escapeHTML(text)}`;
+    chatContainer.appendChild(msgDiv);
+    scrollToBottom();
+  }
+
+  function appendSystemMessage(text) {
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'message system';
+    msgDiv.innerText = text;
+    chatContainer.appendChild(msgDiv);
+    scrollToBottom();
+  }
+
+  function appendAssistantMessage(data, isVoice = false) {
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'message assistant';
+    
+    let html = `<strong>Sami</strong><br>`;
+    
+    if (data.type === 'no_verified_info') {
+      html += `<div class="badge">NO VERIFIED INFO</div><br>`;
+    } else if (data.type === 'out_of_scope') {
+      html += `<div class="badge out-of-scope">OUT OF SCOPE</div><br>`;
+    }
+    
+    const textContent = data.answer || (data.clarification && data.clarification.question) || data.message || JSON.stringify(data);
+    html += `<div>${escapeHTML(textContent)}</div>`;
+    
+    if (data.type === 'clarification' && data.clarification && data.clarification.options) {
+      html += `<div class="options-container">`;
+      data.clarification.options.forEach(opt => {
+        html += `<button class="option-btn" onclick="sendOption('${escapeHTML(opt.replace(/'/g, "\\'"))}')">${escapeHTML(opt)}</button>`;
+      });
+      html += `</div>`;
+    }
+
+    if (data.sources && data.sources.length > 0) {
+      html += `
+        <details class="sources-details">
+          <summary>Sources (${data.sources.length})</summary>
+      `;
+      data.sources.forEach(src => {
+        html += `
+          <div class="source-item">
+            <strong>${escapeHTML(src.sourceId)} — ${escapeHTML(src.title)}</strong><br>
+            ${escapeHTML(src.category || '')} > ${escapeHTML(src.sectionTitle || '')}<br>
+            Page ${src.pageStart}${src.pageEnd && src.pageEnd !== src.pageStart ? '-' + src.pageEnd : ''}<br>
+            <details style="margin-top:4px;"><summary>Show content</summary><pre style="white-space:pre-wrap; font-family:inherit; margin:4px 0 0 0;">${escapeHTML(src.content)}</pre></details>
+          </div>
+        `;
+      });
+      html += `</details>`;
+    }
+
+    if (data.timing) {
+      html += `
+        <div class="debug-panel">
+          Retrieval: ${data.timing.retrievalMs}ms<br>
+          Context: ${data.timing.contextBuildMs}ms<br>
+          Generation: ${data.timing.generationMs}ms<br>
+          Total: ${data.timing.totalMs}ms
+        </div>
+      `;
+    }
+
+    msgDiv.innerHTML = html;
+    chatContainer.appendChild(msgDiv);
+    scrollToBottom();
+  }
+
+  function appendLoading() {
+    const id = 'loading-' + Date.now();
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'message assistant loading';
+    msgDiv.id = id;
+    msgDiv.innerHTML = `<strong>Sami</strong><br>Typing...`;
+    chatContainer.appendChild(msgDiv);
+    scrollToBottom();
+    return id;
+  }
+
+  function removeLoading(id) {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+  }
+
+  function scrollToBottom() {
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+  }
+
+  function escapeHTML(str) {
+    if (typeof str !== 'string') return str;
+    return str.replace(/[&<>'"]/g, 
+      tag => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        "'": '&#39;',
+        '"': '&quot;'
+      }[tag])
+    );
+  }
+
+  // Interaction logic
+  async function sendMessage() {
+    const text = textInput.value.trim();
+    if (!text) return;
+
+    const userId = userIdInput.value.trim();
+    if (!userId) {
+      alert("Please enter a User ID");
+      return;
+    }
+
+    textInput.value = '';
+    appendUserMessage(text);
+    
+    const loadingId = appendLoading();
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/assistant/ask?debug=true`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: text, userId })
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+
+      const data = await res.json();
+      removeLoading(loadingId);
+      appendAssistantMessage(data);
+
+    } catch (err) {
+      removeLoading(loadingId);
+      appendSystemMessage(`SYSTEM ERROR\\n${err.message}`);
+    }
+  }
+
+  window.sendOption = function(optionText) {
+    const userId = userIdInput.value.trim();
+    appendUserMessage(optionText);
+    const loadingId = appendLoading();
+
+    fetch(`${BACKEND_URL}/api/assistant/ask?debug=true`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: optionText, userId })
+    })
+    .then(res => {
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      return res.json();
+    })
+    .then(data => {
+      removeLoading(loadingId);
+      appendAssistantMessage(data);
+    })
+    .catch(err => {
+      removeLoading(loadingId);
+      appendSystemMessage(`SYSTEM ERROR\\n${err.message}`);
+    });
+  };
+
+  btnSend.addEventListener('click', sendMessage);
+  textInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') sendMessage();
+  });
+
+  // Recording Logic
+  let mediaRecorder;
+  let audioChunks = [];
+  let isRecording = false;
+
+  btnRecord.addEventListener('click', async () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  });
+
+  async function startRecording() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      audioChunks = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunks.push(e.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        await sendVoiceMessage(audioBlob);
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      isRecording = true;
+      btnRecord.innerText = '⏹';
+      btnRecord.classList.add('recording');
+      btnRecord.title = 'Stop Recording';
+
+    } catch (err) {
+      appendSystemMessage(`Microphone access denied or not supported: ${err.message}`);
+    }
+  }
+
+  function stopRecording() {
+    if (mediaRecorder && isRecording) {
+      mediaRecorder.stop();
+      isRecording = false;
+      btnRecord.innerText = '🎤';
+      btnRecord.classList.remove('recording');
+      btnRecord.title = 'Record Voice';
+    }
+  }
+
+  async function sendVoiceMessage(audioBlob) {
+    const userId = userIdInput.value.trim();
+    if (!userId) {
+      alert("Please enter a User ID");
+      return;
+    }
+
+    const loadingId = appendLoading();
+
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'recording.webm');
+    formData.append('userId', userId);
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/voice/ask?debug=true`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+
+      const data = await res.json();
+      removeLoading(loadingId);
+      
+      // If STT returned a transcript, display it
+      if (data.transcript) {
+        appendUserMessage(data.transcript, true);
+      } else {
+        appendUserMessage("(Voice Message)", true);
+      }
+
+      appendAssistantMessage(data, true);
+
+    } catch (err) {
+      removeLoading(loadingId);
+      appendSystemMessage(`SYSTEM ERROR\\n${err.message}`);
+    }
+  }
+
+</script>
+</body>
+</html>
