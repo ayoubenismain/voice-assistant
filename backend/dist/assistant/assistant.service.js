@@ -18,6 +18,8 @@ import { buildNoVerifiedInfoFallback, buildOutOfScopeMessage } from './language-
 import { ScopeGuardService } from '../scope-guard/scope-guard.service.js';
 import { ConversationService } from '../conversation/conversation.service.js';
 import { ConversationContextService } from '../conversation/conversation-context.service.js';
+import { TimetableIntentService } from '../timetable/timetable-intent.service.js';
+import { TimetableToolsService } from '../timetable/timetable-tools.service.js';
 let AssistantService = AssistantService_1 = class AssistantService {
     configService;
     retrievalService;
@@ -27,9 +29,11 @@ let AssistantService = AssistantService_1 = class AssistantService {
     scopeGuard;
     conversationService;
     conversationContextService;
+    timetableIntent;
+    timetableTools;
     logger = new Logger(AssistantService_1.name);
     retrievalTopK;
-    constructor(configService, retrievalService, llmService, ragContextBuilder, ragPromptBuilder, scopeGuard, conversationService, conversationContextService) {
+    constructor(configService, retrievalService, llmService, ragContextBuilder, ragPromptBuilder, scopeGuard, conversationService, conversationContextService, timetableIntent, timetableTools) {
         this.configService = configService;
         this.retrievalService = retrievalService;
         this.llmService = llmService;
@@ -38,6 +42,8 @@ let AssistantService = AssistantService_1 = class AssistantService {
         this.scopeGuard = scopeGuard;
         this.conversationService = conversationService;
         this.conversationContextService = conversationContextService;
+        this.timetableIntent = timetableIntent;
+        this.timetableTools = timetableTools;
         this.retrievalTopK = this.configService.get('RAG_RETRIEVAL_TOP_K', 8);
     }
     async ask(dto) {
@@ -45,6 +51,11 @@ let AssistantService = AssistantService_1 = class AssistantService {
         let retrievalMs = 0;
         let contextBuildMs = 0;
         let generationMs = 0;
+        const ttIntent = this.timetableIntent.detect(dto.query);
+        if (ttIntent.isTimetable) {
+            this.logger.log(`[AssistantService] timetable intent detected: target=${ttIntent.target} when=${ttIntent.when}`);
+            return this.handleTimetable(dto, ttIntent, startTime);
+        }
         if (dto.userId) {
             return this.askWithConversation(dto, startTime);
         }
@@ -370,6 +381,39 @@ let AssistantService = AssistantService_1 = class AssistantService {
         }
         return response;
     }
+    async handleTimetable(dto, intent, startTime) {
+        const generationStart = Date.now();
+        const llmResponse = await this.timetableTools.handle(intent, dto.query);
+        const generationMs = Date.now() - generationStart;
+        if (dto.userId) {
+            try {
+                const ctx = await this.conversationContextService.assembleContext(dto.userId, dto.query.trim());
+                await this.conversationService.saveExchange(ctx.conversationId, dto.query, llmResponse.answer ?? '', 'answer');
+                await this.conversationService.clearPendingClarification(ctx.conversationId);
+            }
+            catch (e) {
+                this.logger.warn(`[AssistantService] non-fatal: failed to persist timetable exchange: ${e.message}`);
+            }
+        }
+        return {
+            type: 'answer',
+            query: dto.query,
+            answer: llmResponse.answer ?? undefined,
+            sources: [],
+            timing: {
+                retrievalMs: 0,
+                contextBuildMs: 0,
+                generationMs,
+                totalMs: Date.now() - startTime,
+            },
+            ...(dto.debug && {
+                debug: {
+                    timetableIntent: intent,
+                    timetableAvailable: this.timetableTools.isAvailable,
+                },
+            }),
+        };
+    }
 };
 AssistantService = AssistantService_1 = __decorate([
     Injectable(),
@@ -380,7 +424,9 @@ AssistantService = AssistantService_1 = __decorate([
         RagPromptBuilderService,
         ScopeGuardService,
         ConversationService,
-        ConversationContextService])
+        ConversationContextService,
+        TimetableIntentService,
+        TimetableToolsService])
 ], AssistantService);
 export { AssistantService };
 //# sourceMappingURL=assistant.service.js.map

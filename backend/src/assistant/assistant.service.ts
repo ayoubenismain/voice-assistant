@@ -12,6 +12,9 @@ import { ScopeGuardService } from '../scope-guard/scope-guard.service.js';
 import { ConversationService } from '../conversation/conversation.service.js';
 import { ConversationContextService } from '../conversation/conversation-context.service.js';
 import type { PendingClarification } from '../conversation/conversation.types.js';
+import { TimetableIntentService } from '../timetable/timetable-intent.service.js';
+import { TimetableToolsService } from '../timetable/timetable-tools.service.js';
+import type { TimetableIntent } from '../timetable/timetable.types.js';
 
 /**
  * Phase 8G — conversation-aware AssistantService.
@@ -47,6 +50,8 @@ export class AssistantService {
     private readonly scopeGuard: ScopeGuardService,
     private readonly conversationService: ConversationService,
     private readonly conversationContextService: ConversationContextService,
+    private readonly timetableIntent: TimetableIntentService,
+    private readonly timetableTools: TimetableToolsService,
   ) {
     this.retrievalTopK = this.configService.get<number>('RAG_RETRIEVAL_TOP_K', 8);
   }
@@ -56,6 +61,14 @@ export class AssistantService {
     let retrievalMs = 0;
     let contextBuildMs = 0;
     let generationMs = 0;
+
+    // ── Timetable fast-path ─────────────────────────────────────────────────
+    // Check BEFORE scope-guard so timetable questions are never rejected.
+    const ttIntent = this.timetableIntent.detect(dto.query);
+    if (ttIntent.isTimetable) {
+      this.logger.log(`[AssistantService] timetable intent detected: target=${ttIntent.target} when=${ttIntent.when}`);
+      return this.handleTimetable(dto, ttIntent, startTime);
+    }
 
     // ── Conversation-aware path ───────────────────────────────────────────────
     if (dto.userId) {
@@ -511,5 +524,59 @@ export class AssistantService {
     }
 
     return response;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Timetable fast-path
+  // ---------------------------------------------------------------------------
+
+  private async handleTimetable(
+    dto: AskAssistantDto,
+    intent: TimetableIntent,
+    startTime: number,
+  ): Promise<AssistantResponse> {
+    const generationStart = Date.now();
+
+    const llmResponse = await this.timetableTools.handle(intent, dto.query);
+
+    const generationMs = Date.now() - generationStart;
+
+    // Persist the exchange if we have a userId
+    if (dto.userId) {
+      try {
+        const ctx = await this.conversationContextService.assembleContext(
+          dto.userId,
+          dto.query.trim(),
+        );
+        await this.conversationService.saveExchange(
+          ctx.conversationId,
+          dto.query,
+          llmResponse.answer ?? '',
+          'answer',
+        );
+        await this.conversationService.clearPendingClarification(ctx.conversationId);
+      } catch (e) {
+        this.logger.warn(`[AssistantService] non-fatal: failed to persist timetable exchange: ${(e as Error).message}`);
+      }
+    }
+
+    return {
+      type: 'answer',
+      query: dto.query,
+      answer: llmResponse.answer ?? undefined,
+      sources: [],
+      timing: {
+        retrievalMs: 0,
+        contextBuildMs: 0,
+        generationMs,
+        totalMs: Date.now() - startTime,
+      },
+      ...(dto.debug && {
+        debug: {
+          timetableIntent: intent,
+          timetableAvailable: this.timetableTools.isAvailable,
+        },
+      }),
+    };
   }
 }

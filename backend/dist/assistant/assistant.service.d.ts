@@ -8,6 +8,8 @@ import { RagPromptBuilderService } from '../rag/rag-prompt-builder.service.js';
 import { ScopeGuardService } from '../scope-guard/scope-guard.service.js';
 import { ConversationService } from '../conversation/conversation.service.js';
 import { ConversationContextService } from '../conversation/conversation-context.service.js';
+import { TimetableIntentService } from '../timetable/timetable-intent.service.js';
+import { TimetableToolsService } from '../timetable/timetable-tools.service.js';
 export declare class AssistantService {
     private readonly configService;
     private readonly retrievalService;
@@ -17,12 +19,15 @@ export declare class AssistantService {
     private readonly scopeGuard;
     private readonly conversationService;
     private readonly conversationContextService;
+    private readonly timetableIntent;
+    private readonly timetableTools;
     private readonly logger;
     private readonly retrievalTopK;
-    constructor(configService: ConfigService, retrievalService: RetrievalService, llmService: LlmService, ragContextBuilder: RagContextBuilderService, ragPromptBuilder: RagPromptBuilderService, scopeGuard: ScopeGuardService, conversationService: ConversationService, conversationContextService: ConversationContextService);
+    constructor(configService: ConfigService, retrievalService: RetrievalService, llmService: LlmService, ragContextBuilder: RagContextBuilderService, ragPromptBuilder: RagPromptBuilderService, scopeGuard: ScopeGuardService, conversationService: ConversationService, conversationContextService: ConversationContextService, timetableIntent: TimetableIntentService, timetableTools: TimetableToolsService);
     ask(dto: AskAssistantDto): Promise<AssistantResponse>;
     private askWithConversation;
     private askStateless;
     private buildPersistContent;
     private buildResponse;
+    private handleTimetable;
 }

@@ -16,6 +16,8 @@ import { ScopeGuardService } from '../scope-guard/scope-guard.service.js';
 import { ConversationService } from '../conversation/conversation.service.js';
 import { ConversationContextService } from '../conversation/conversation-context.service.js';
 import type { AssembledConversationContext } from '../conversation/conversation.types.js';
+import { TimetableIntentService } from '../timetable/timetable-intent.service.js';
+import { TimetableToolsService } from '../timetable/timetable-tools.service.js';
 
 // Default scope guard: every query is in_scope (preserves existing tests exactly)
 const IN_SCOPE_RESULT = {
@@ -38,6 +40,7 @@ const DEFAULT_CONTEXT: AssembledConversationContext = {
   effectiveQuery: 'test query',
   resolvedClarification: null,
   clarificationResolved: false,
+  followupResolved: false,
   recentMessages: [],
   conversationId: 'conv-test',
 };
@@ -51,8 +54,24 @@ describe('AssistantService', () => {
   let scopeGuard: Partial<ScopeGuardService>;
   let conversationService: Partial<ConversationService>;
   let conversationContextService: Partial<ConversationContextService>;
+  let timetableIntentService: Partial<TimetableIntentService>;
+  let timetableToolsService: Partial<TimetableToolsService>;
 
   beforeEach(async () => {
+    timetableIntentService = {
+      detect: vi.fn().mockReturnValue({ isTimetable: false }),
+    };
+
+    timetableToolsService = {
+      handle: vi.fn().mockResolvedValue({
+        type: 'answer',
+        answer: 'Timetable answer',
+        clarificationQuestion: null,
+        clarificationOptions: [],
+        usedSourceIds: [],
+      }),
+      isAvailable: true,
+    };
     retrievalService = {
       semanticSearch: vi.fn().mockResolvedValue({
         retrieval: { strategy: 'hybrid_rrf', detectedIntents: [] },
@@ -133,6 +152,8 @@ describe('AssistantService', () => {
         { provide: ScopeGuardService, useValue: scopeGuard },
         { provide: ConversationService, useValue: conversationService },
         { provide: ConversationContextService, useValue: conversationContextService },
+        { provide: TimetableIntentService, useValue: timetableIntentService },
+        { provide: TimetableToolsService, useValue: timetableToolsService },
       ],
     }).compile();
 

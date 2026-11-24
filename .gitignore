@@ -135,5 +135,16 @@ webpack.config.js
 *.db
 *.db-journal
 
-# Storage/Uploaded documents (if any locally)
-backend/storage/documents/
+# Python / Timetable API
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+timetable-api/data/*
+!timetable-api/data/.gitkeep
+timetable-api/.env
+*.sqlite3
+*.xls
+*.xlsx

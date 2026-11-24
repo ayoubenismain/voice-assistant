@@ -166,6 +166,11 @@ export const INSCOPE_STUDENT_LIFE: ReadonlySet<string> = new Set([
   'filière', 'filiere',
   'niveau',
   'année', 'annee',
+  // Timetable vocabulary
+  'timetable', 'schedule', 'lesson', 'lessons', 'lecture', 'lectures',
+  'cours', 'séance', 'horaire', 'horaires',
+  'dars', 'drous',      // Darija
+  'جدول', 'حصة', 'حصص', 'درس', 'دروس', 'محاضرة',  // Arabic
   // Arabic
   'مناظرة', 'امتحان', 'نادي',
   // Arabizi

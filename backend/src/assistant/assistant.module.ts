@@ -7,9 +7,10 @@ import { LlmModule } from '../llm/llm.module.js';
 import { RagModule } from '../rag/rag.module.js';
 import { ScopeGuardModule } from '../scope-guard/scope-guard.module.js';
 import { ConversationModule } from '../conversation/conversation.module.js';
+import { TimetableModule } from '../timetable/timetable.module.js';
 
 @Module({
-  imports: [ConfigModule, RetrievalModule, LlmModule, RagModule, ScopeGuardModule, ConversationModule],
+  imports: [ConfigModule, RetrievalModule, LlmModule, RagModule, ScopeGuardModule, ConversationModule, TimetableModule],
   controllers: [AssistantController],
   providers: [AssistantService],
   exports: [AssistantService],
